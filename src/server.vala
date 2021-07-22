@@ -176,6 +176,7 @@ class Vls.Server : Object {
         call_handlers["textDocument/references"] = this.textDocumentReferences;
         call_handlers["textDocument/documentHighlight"] = this.textDocumentReferences;
         call_handlers["textDocument/implementation"] = this.textDocumentImplementation;
+        call_handlers["textDocument/formatting"] = this.textDocumentFormatting;
         call_handlers["workspace/symbol"] = this.workspaceSymbol;
         call_handlers["textDocument/rename"] = this.textDocumentRename;
         call_handlers["textDocument/prepareRename"] = this.textDocumentPrepareRename;
@@ -247,6 +248,7 @@ class Vls.Server : Object {
                     referencesProvider: new Variant.boolean (true),
                     documentHighlightProvider: new Variant.boolean (true),
                     implementationProvider: new Variant.boolean (true),
+                    documentFormattingProvider: new Variant.boolean (true),
                     workspaceSymbolProvider: new Variant.boolean (true),
                     renameProvider: buildDict (prepareProvider: new Variant.boolean (true)),
                     codeLensProvider: buildDict (resolveProvider: new Variant.boolean (false))
@@ -1465,6 +1467,30 @@ class Vls.Server : Object {
 
             Vala.CodeContext.pop ();
         });
+    }
+
+    void textDocumentFormatting (Jsonrpc.Server self, Jsonrpc.Client client, string method, Variant id, Variant @params) {
+        var p = Util.parse_variant<Lsp.DocumentFormattingParams>(@params);
+        var results = new ArrayList<Pair<Vala.SourceFile, Compilation>> ();
+        Project selected_project = null;
+        foreach (var project in projects.get_keys_as_array ()) {
+            results = project.lookup_compile_input_source_file (p.textDocument.uri);
+            if (!results.is_empty) {
+                selected_project = project;
+                break;
+            }
+        }
+        // fallback to default project
+        if (selected_project == null) {
+            results = default_project.lookup_compile_input_source_file (p.textDocument.uri);
+            selected_project = default_project;
+        }
+        if (results.is_empty) {
+            debug (@"file `$(Uri.unescape_string (p.textDocument.uri))' not found");
+            reply_null (id, client, method);
+            return;
+        }
+        
     }
 
     void textDocumentImplementation (Jsonrpc.Server self, Jsonrpc.Client client, string method, Variant id, Variant @params) {
