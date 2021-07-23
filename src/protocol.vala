@@ -53,7 +53,7 @@ namespace Lsp {
         /**
          * Reports an information.
          */
-        Information = 3,
+         Information = 3,
         /**
          * Reports a hint.
          */
@@ -233,17 +233,17 @@ namespace Lsp {
     }
     
     class DocumentFormattingParams : Object {
-		public TextDocumentIdentifier textDocument { get; set; }
-		public FormattingOptions options { get; set; }
-	}
-	
-	class FormattingOptions : Object {
-		public uint tabSize { get; set; }
-		public bool insertSpaces { get; set; }
-		public bool trimTrailingWhitespace { get; set; }
-		public bool insertFinalNewline { get; set; }
-		public bool trimFinalNewlines { get; set; }
-	}
+        public TextDocumentIdentifier textDocument { get; set; }
+        public FormattingOptions options { get; set; }
+    }
+    
+    class FormattingOptions : Object {
+        public uint tabSize { get; set; }
+        public bool insertSpaces { get; set; }
+        public bool trimTrailingWhitespace { get; set; }
+        public bool insertFinalNewline { get; set; }
+        public bool trimFinalNewlines { get; set; }
+    }
 
     class ReferenceParams : TextDocumentPositionParams {
         public class ReferenceContext : Object {
@@ -439,20 +439,20 @@ namespace Lsp {
     [CCode (default_value = "LSP_COMPLETION_TRIGGER_KIND_Invoked")]
     enum CompletionTriggerKind {
         /**
-	     * Completion was triggered by typing an identifier (24x7 code
-	     * complete), manual invocation (e.g Ctrl+Space) or via API.
-	     */
+         * Completion was triggered by typing an identifier (24x7 code
+         * complete), manual invocation (e.g Ctrl+Space) or via API.
+         */
         Invoked = 1,
 
         /**
-	     * Completion was triggered by a trigger character specified by
-	     * the `triggerCharacters` properties of the `CompletionRegistrationOptions`.
-	     */
+         * Completion was triggered by a trigger character specified by
+         * the `triggerCharacters` properties of the `CompletionRegistrationOptions`.
+         */
         TriggerCharacter = 2,
 
         /**
-	     * Completion was re-triggered as the current completion list is incomplete.
-	     */
+         * Completion was re-triggered as the current completion list is incomplete.
+         */
         TriggerForIncompleteCompletions = 3
     }
 
@@ -482,13 +482,13 @@ namespace Lsp {
         PlainText = 1,
 
         /**
-    	 * The primary text to be inserted is treated as a snippet.
-    	 *
-    	 * A snippet can define tab stops and placeholders with `$1`, `$2`
-    	 * and `${3:foo}`. `$0` defines the final tab stop, it defaults to
-    	 * the end of the snippet. Placeholders with equal identifiers are linked,
-    	 * that is typing in one will update others too.
-    	 */
+         * The primary text to be inserted is treated as a snippet.
+         *
+         * A snippet can define tab stops and placeholders with `$1`, `$2`
+         * and `${3:foo}`. `$0` defines the final tab stop, it defaults to
+         * the end of the snippet. Placeholders with equal identifiers are linked,
+         * that is typing in one will update others too.
+         */
         Snippet = 2,
     }
 
@@ -671,6 +671,13 @@ namespace Lsp {
         TypeParameter = 25
     }
     
+    /**
+     * Capabilities of the client/editor for `textDocument/formatting`
+     */
+    class DocumentFormattingClientCapabilities : Object {
+        public bool dynamicRegistration { get; set; }
+    }
+
     /**
      * Capabilities of the client/editor for `textDocument/documentSymbol`
      */

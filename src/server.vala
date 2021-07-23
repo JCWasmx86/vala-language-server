@@ -1490,7 +1490,28 @@ class Vls.Server : Object {
             reply_null (id, client, method);
             return;
         }
-        
+        var json_array = new Json.Array ();
+        foreach (var file in results) {
+            var formatter = new Vls.Formatter (p.options, file, null);
+            TextEdit edited;
+            Jsonrpc.ClientError error_code = 0;
+            var error_string = formatter.format (out edited, out error_code);
+            if(error_string != null) {
+                client.reply_error_async.begin (
+                    id, 
+                    error_code, 
+                    error_string, 
+                cancellable);
+                return;
+            }
+            json_array.add_element (Json.gobject_serialize (edited));
+        }
+        try {
+            Variant variant_array = Json.gvariant_deserialize (new Json.Node.alloc ().init_array (json_array), null);
+            client.reply (id, variant_array, cancellable);
+        } catch (Error e) {
+            debug (@"[$method] failed to reply to client: $(e.message)");
+        }
     }
 
     void textDocumentImplementation (Jsonrpc.Server self, Jsonrpc.Client client, string method, Variant id, Variant @params) {
