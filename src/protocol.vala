@@ -53,7 +53,7 @@ namespace Lsp {
         /**
          * Reports an information.
          */
-         Information = 3,
+        Information = 3,
         /**
          * Reports a hint.
          */

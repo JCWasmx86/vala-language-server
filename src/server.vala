@@ -1498,9 +1498,9 @@ class Vls.Server : Object {
             var error_string = formatter.format (out edited, out error_code);
             if(error_string != null) {
                 client.reply_error_async.begin (
-                    id, 
-                    error_code, 
-                    error_string, 
+                    id,
+                    error_code,
+                    error_string,
                 cancellable);
                 return;
             }
