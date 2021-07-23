@@ -1470,12 +1470,14 @@ class Vls.Server : Object {
     }
 
     void textDocumentFormatting (Jsonrpc.Server self, Jsonrpc.Client client, string method, Variant id, Variant @params) {
+        debug ("[textDocument/formatting] called!");
         var p = Util.parse_variant<Lsp.DocumentFormattingParams>(@params);
         var results = new ArrayList<Pair<Vala.SourceFile, Compilation>> ();
         Project selected_project = null;
         foreach (var project in projects.get_keys_as_array ()) {
             results = project.lookup_compile_input_source_file (p.textDocument.uri);
             if (!results.is_empty) {
+                debug ("[textDocument/formatting] found good URI ... %s", p.textDocument.uri);
                 selected_project = project;
                 break;
             }

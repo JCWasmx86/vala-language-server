@@ -33,7 +33,7 @@ from gi.repository import Gio
 from gi.repository import GObject
 from gi.repository import Ide
 
-DEV_MODE = False
+DEV_MODE = True
 
 class VlsService(Ide.Object):
     _client = None
@@ -199,6 +199,6 @@ class VlsHoverProvider(Ide.LspHoverProvider):
         self.props.priority = 100
         VlsService.bind_client(self)
 
-class VlsSearchProvider(Ide.LspSearchProvider):
-    def do_load(self, context):
-        VlsService.bind_client_lazy(self)
+#class VlsSearchProvider(Ide.LspSearchProvider):
+#    def do_load(self, context):
+#        VlsService.bind_client_lazy(self)
