@@ -21,20 +21,24 @@ class Vls.Formatter : Object{
     }
 
     /**
-     * Format the source file. If an error occurs, error is set and a non-null
-     * error string is returned. Otherwise "edit" is set.
-     */
+    * Format the source file. If an error occurs, error is set and a non-null
+    * error string is returned. Otherwise "edit" is set.
+    */
     public string? format (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {
         error = 0;
         var new_lines = new ArrayList<string>();
         var expected_indentation_depth = 0;
         var source_file = _input.first;
         int i = _start_line;
+        int real_end_line = 0;
         for (i = _start_line; i <= _end_line; i++) {
-            var line_to_format = source_file.get_source_line (i);
-            
-            if (line_to_format == null)
+            // + 1, as libvala expects the line number to be 1-based,
+            // while LSP provides it as 0-based.
+            var line_to_format = source_file.get_source_line (i + 1);
+            if(line_to_format == null) {
                 break;
+            }
+            real_end_line = i;
             var trimmed_line = line_to_format.strip ();
             // Indented lines with no other content are replaced by really empty lines
             if(trimmed_line.length == 0) {
@@ -47,13 +51,21 @@ class Vls.Formatter : Object{
                 var comment = trimmed_line.slice( 2, trimmed_line.length).strip();
                 raw_string = "// " + comment;
             } else if (trimmed_line.has_suffix ("{")) {
-                expected_indentation_depth++;
+                if(!trimmed_line.has_prefix ("}")) {
+                    // After if() {, while() {, ..., indent the body one unit further...
+                    expected_indentation_depth++;
+                } // ..., but for } else [if()] {, not
                 new_lines.add (generate_indentation (expected_indentation_depth - 1) + trimmed_line);
-            } else if (trimmed_line.has_suffix ("}")) {
+                continue;
+            } else if (trimmed_line.has_prefix ("}")) {
+                // If a method/block/namespace/class ends, reduce the indentation
                 expected_indentation_depth--;
                 raw_string = trimmed_line;
+            } else {
+                // Just a normal line.
+                raw_string = trimmed_line;
             }
-            new_lines.add (generate_indentation (expected_indentation_depth) + trimmed_line);
+            new_lines.add (generate_indentation (expected_indentation_depth) + raw_string);
         }
         var new_file = new StringBuilder.sized (new_lines.size * 80);
         foreach (var line in new_lines) {
@@ -64,10 +76,12 @@ class Vls.Formatter : Object{
         edit = new Lsp.TextEdit () {
             range = new Lsp.Range () {
                 start = new Lsp.Position () {
-                    line = i
+                    line = _start_line,
+                    character = 0
                 },
                 end = new Lsp.Position () {
-                    line = _end_line
+                    line = real_end_line,
+                    character = 1
                 }
             },
             // Just one final newline

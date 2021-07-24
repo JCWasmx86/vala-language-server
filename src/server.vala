@@ -1506,10 +1506,12 @@ class Vls.Server : Object {
                 cancellable);
                 return;
             }
+            debug ("File:\n%s", Json.to_string (Json.gobject_serialize (edited), true));
             json_array.add_element (Json.gobject_serialize (edited));
         }
         try {
             Variant variant_array = Json.gvariant_deserialize (new Json.Node.alloc ().init_array (json_array), null);
+            debug("Sending text:\n%s", Json.to_string (new Json.Node.alloc ().init_array (json_array), true));
             client.reply (id, variant_array, cancellable);
         } catch (Error e) {
             debug (@"[$method] failed to reply to client: $(e.message)");
