@@ -21,32 +21,57 @@ class Vls.Formatter : Object{
     }
 
     /**
-    * Format the source file. If an error occurs, error is set and a non-null
-    * error string is returned. Otherwise "edit" is set.
-    */
+     *Format the source file. If an error occurs, error is set and a non-null
+     * error string is returned. Otherwise "edit" is set.
+     */
     public string? format (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {
         error = 0;
         var new_lines = new ArrayList<string>();
         var expected_indentation_depth = 0;
         var source_file = _input.first;
-        int i = _start_line;
-        int real_end_line = 0;
-        for (i = _start_line; i <= _end_line; i++) {
+        bool is_in_multiline_comment = false;
+        for (int i = _start_line; i <= _end_line; i++) {
             // + 1, as libvala expects the line number to be 1-based,
             // while LSP provides it as 0-based.
             var line_to_format = source_file.get_source_line (i + 1);
             if(line_to_format == null) {
                 break;
             }
-            real_end_line = i;
             var trimmed_line = line_to_format.strip ();
             // Indented lines with no other content are replaced by really empty lines
             if(trimmed_line.length == 0) {
-                new_lines.add("");
+                new_lines.add(is_in_multiline_comment ?  (generate_indentation (expected_indentation_depth) + " *") : "");
+                continue;
+            }
+            if(is_in_multiline_comment) {
+                var indent = generate_indentation (expected_indentation_depth) + " ";
+                if(trimmed_line.has_suffix ("*/")) {
+                    new_lines.add (indent + "*/");
+                    is_in_multiline_comment = false;
+                } else  {
+                    string to_add = trimmed_line;
+                    if(trimmed_line.has_prefix ("*")) {
+                        to_add = trimmed_line.slice (1, trimmed_line.length);
+                    }
+                    new_lines.add (indent + "* " + to_add.strip ());
+                }
                 continue;
             }
             string? raw_string = null;
-            if (trimmed_line.has_prefix ("//")) {
+            // Skip multiline comments, that are just one line
+            if(trimmed_line.has_prefix ("/* ") || trimmed_line.has_prefix ("/** ") && trimmed_line.has_suffix ("*/")) {
+                raw_string = trimmed_line;
+            } else if(trimmed_line.has_prefix ("/*")) {
+                is_in_multiline_comment = true;
+                var is_doc = trimmed_line.has_prefix ("/**");
+                var maybe_string = trimmed_line.slice( is_doc ? 3 : 2, trimmed_line.length).strip();
+                var indent = generate_indentation (expected_indentation_depth);
+                new_lines.add (indent + (is_doc ? "/**" : "/*"));
+                if(maybe_string.length > 0) {
+                    new_lines.add(indent + " *" + maybe_string);
+                }
+                continue;
+            } else if (trimmed_line.has_prefix ("//")) {
                 // Convert "//<someComment>" to "// <someComment>"
                 var comment = trimmed_line.slice( 2, trimmed_line.length).strip();
                 raw_string = "// " + comment;
@@ -80,7 +105,8 @@ class Vls.Formatter : Object{
                     character = 0
                 },
                 end = new Lsp.Position () {
-                    line = real_end_line,
+                    line = _start_line + new_lines.size,
+                    // Just for the trailing newline
                     character = 1
                 }
             },
