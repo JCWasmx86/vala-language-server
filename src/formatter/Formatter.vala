@@ -21,7 +21,7 @@ class Vls.Formatter : Object{
     }
 
     /**
-     *Format the source file. If an error occurs, error is set and a non-null
+     * Format the source file. If an error occurs, error is set and a non-null
      * error string is returned. Otherwise "edit" is set.
      */
     public string? format (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {
@@ -68,7 +68,7 @@ class Vls.Formatter : Object{
                 var indent = generate_indentation (expected_indentation_depth);
                 new_lines.add (indent + (is_doc ? "/**" : "/*"));
                 if(maybe_string.length > 0) {
-                    new_lines.add(indent + " *" + maybe_string);
+                    new_lines.add(indent + " * " + maybe_string);
                 }
                 continue;
             } else if (trimmed_line.has_prefix ("//")) {
