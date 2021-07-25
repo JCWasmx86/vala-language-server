@@ -56,6 +56,10 @@ class Vls.Formatter : Object{
                     new_lines.add (indent + "* " + to_add.strip ());
                 }
                 continue;
+            // Preprocessor statements are not indented
+            } else if (trimmed_line.has_prefix ("#")) {
+                new_lines.add (trimmed_line);
+                continue;
             }
             string? raw_string = null;
             // Skip multiline comments, that are just one line
