@@ -56,7 +56,10 @@ version_file = vcs_tag(input: 'version.vala.in',
 add_project_arguments(['--enable-gobject-tracing', '--fatal-warnings'], language: 'vala')
 
 extra_vala_sources = files([
-  'src/util.vala',
+  'src/util.vala'
+])
+formatter_source = files([
+  'src/formatter/tokenizer.vala'
 ])
 
 if host_machine.system() == 'windows'
