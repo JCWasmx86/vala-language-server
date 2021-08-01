@@ -58,9 +58,6 @@ add_project_arguments(['--enable-gobject-tracing', '--fatal-warnings'], language
 extra_vala_sources = files([
   'src/util.vala'
 ])
-formatter_source = files([
-  'src/formatter/tokenizer.vala'
-])
 
 if host_machine.system() == 'windows'
     deps += dependency('gio-windows-2.0')
