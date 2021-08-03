@@ -20,6 +20,7 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_array_creation_expression (Vala.ArrayCreationExpression expr) {
+        warning("Umimplemented ArrayCreationExpressions: %s", expr.to_string ());
         // TODO: Check, how to get the element type name.
         tmp_string = "new " + expr.element_type.to_string ();
         for(int i = 0; i < expr.rank - 1; i++) {
@@ -54,7 +55,8 @@ class Vls.FormattingVisitor : CodeVisitor {
         var left_side = tmp_string;
         expr.right.accept (this);
         var right_side = tmp_string;
-        tmp_string = right_side + " " + expr.operator.to_string () + " " + left_side;
+        warning("%s <=> %s", expr.left.type_name, expr.right.type_name);
+        tmp_string = left_side + " " + expr.operator.to_string () + " " + right_side;
     }
 
     public override void visit_block(Vala.Block expr) {
@@ -109,6 +111,7 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_character_literal(Vala.CharacterLiteral expr) {
+        warning("Umimplemented CharacterLiteral: %s", expr.to_string ());
         tmp_string = expr.to_string();
     }
 
@@ -267,14 +270,26 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_data_type(Vala.DataType expr) {
-        warning ("%s", expr.to_string ());
-        tmp_string = expr.to_string ();
+        warning("Umimplemented DataType: %s // %s", expr.to_string (), expr.type_name);
+        if(expr is UnresolvedType) {
+            tmp_string = sourceref_to_string(((UnresolvedType) expr).source_reference);
+        } else
+            tmp_string = expr.to_string ();
     }
-
+    string sourceref_to_string(SourceReference source_ref) {
+        var file = source_ref.file;
+        return file.get_source_line (source_ref.begin.line).slice (source_ref.begin.column - 1, source_ref.end.column);
+    }
     public override void visit_declaration_statement (DeclarationStatement stmt) {
-        if(stmt.source_reference == null || stmt.declaration.source_reference == null)
-            return;
         stmt.declaration.accept (this);
+        var decl = tmp_string;
+        warning("%s", stmt.declaration.type_name);
+        warning("%s", stmt.type_name);
+        if(stmt.declaration is Constant)
+            ((Constant)stmt.declaration).accept (this);
+        else
+            ((LocalVariable)stmt.declaration).accept(this);
+        tmp_string =  stmt.declaration.name + " = " + decl;
     }
 
     public override void visit_delegate (Delegate d) {
@@ -341,11 +356,36 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_if_statement (IfStatement stmt) {
-
+        var sb = new StringBuilder ();
+        sb.append ("if");
+        if(config.get_bool ("space_before_parentheses"))
+            sb.append_c (' ');
+        sb.append_c ('(');
+        stmt.condition.accept (this);
+        sb.append(tmp_string);
+        sb.append (") ");
+        stmt.true_statement.accept (this);
+        sb.append (tmp_string);
+        if(stmt.false_statement != null) {
+            sb.append ("else");
+            stmt.false_statement.accept(this);
+            sb.append(tmp_string);
+        }
+        tmp_string = sb.str;
     }
 
     public override void visit_initializer_list (InitializerList list) {
-
+        var exprs = list.get_initializers ();
+        var sb = new StringBuilder ();
+        sb.append_c ('{');
+        for(var i = 0; i < exprs.size;i++) {
+            exprs.get (i).accept (this);
+            sb.append (tmp_string);
+            if(i != exprs.size - 1)
+                sb.append (", ");
+        }
+        sb.append_c ('}');
+        tmp_string = sb.str;
     }
 
     public override void visit_integer_literal (IntegerLiteral lit) {
@@ -361,7 +401,17 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_local_variable (LocalVariable local) {
-
+        var sb = new StringBuilder ();
+        if(local.variable_type != null) {
+            local.variable_type.accept (this);
+            sb.append(tmp_string).append_c (' ');
+        }
+        sb.append (local.name);
+        if(local.initializer != null) {
+            sb.append (" = ");
+            local.initializer.accept (this);
+        }
+        sb.append (";");
     }
 
     public override void visit_lock_statement (LockStatement stmt) {
@@ -376,10 +426,15 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_member_access (MemberAccess expr) {
-
+        if(expr.inner != null)
+            expr.inner.accept (this);
+        var sep = expr.pointer_member_access? "->" : ".";
+        tmp_string = (expr.inner != null? tmp_string + sep : "") + expr.member_name;
     }
 
     public override void visit_method (Method m) {
+        if(m.source_reference == null)
+            return;
         var sb = new StringBuilder.sized(4 * 1024);
         sb.append (m.access.to_string ()).append_c (' ');
         if(m.is_async_callback)
@@ -473,11 +528,61 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_property (Property prop) {
-
+        var sb = new StringBuilder ();
+        sb.append(prop.access.to_string ());
+        if(prop.binding == MemberBinding.CLASS)
+            sb.append ("class ");
+        if(!prop.is_instance_member ())
+            sb.append ("static ");
+        if(prop.is_extern)
+            sb.append ("extern ");
+        if(prop.is_abstract)
+            sb.append ("abstract ");
+        if(prop.is_virtual)
+            sb.append ("virtual ");
+        if(prop.overrides)
+            sb.append ("override ");
+        prop.property_type.accept (this);
+        sb.append (tmp_string).append_c (' ').append (prop.nick).append_c (' ');
+        sb.append_c ('{');
+        bool add_space = false;
+        if(!(prop.initializer is Vala.EmptyStatement)) {
+            sb.append ("default = ");
+            prop.initializer.accept (this);
+            sb.append (tmp_string);
+            add_space = true;
+        }
+        if(prop.get_accessor != null) {
+            if(add_space)
+                sb.append_c (' ');
+            prop.get_accessor.accept (this);
+            sb.append (tmp_string);
+            add_space = true;
+        }
+        if(prop.set_accessor != null) {
+            if(add_space)
+                sb.append_c (' ');
+            prop.set_accessor.accept (this);
+            sb.append (tmp_string);
+        }
+        sb.append ("}");
+        tmp_string = sb.str;
     }
 
     public override void visit_property_accessor (PropertyAccessor acc) {
+        var sb = new StringBuilder ();
+        if(acc.readable) {
+            sb.append ("get ");
+        } else {
+            if(acc.construction) {
+                sb.append ("construct ");
+            }
+            sb.append ("set ");
 
+        }
+        acc.body.accept (this);
+        sb.append (tmp_string);
+        tmp_string = sb.str;
     }
 
     public override void visit_real_literal (RealLiteral lit) {
@@ -485,20 +590,44 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_reference_transfer_expression (ReferenceTransferExpression expr) {
-
+        expr.inner.accept (this);
+        tmp_string = "(owned) " + tmp_string;
     }
 
     public override void visit_regex_literal (RegexLiteral lit) {
-
+        tmp_string = lit.value;
     }
 
     public override void visit_return_statement (ReturnStatement stmt) {
         stmt.return_expression.accept (this);
-        tmp_string = "return " + tmp_string;
+        // TODO: Check, if the ";" is right here.
+        tmp_string = "return " + tmp_string + ";";
     }
 
     public override void visit_signal (Vala.Signal sig) {
-
+        var sb = new StringBuilder ();
+        sb.append (sig.access.to_string ()).append_c (' ');
+        if(sig.is_extern)
+            sb.append ("extern ");
+        if(sig.is_virtual)
+            sb.append ("virtual ");
+        sb.append ("signal ");
+        sig.return_type.accept (this);
+        sb.append (tmp_string).append_c (' ').append(sig.name);
+        if(config.get_bool ("space_before_parentheses"))
+            sb.append_c (' ');
+        sb.append_c ('(');
+        var parameters = sig.get_parameters ();
+        for(var i = 0; i < parameters.size; i++) {
+            parameters.get (i).accept (this);
+            sb.append (tmp_string);
+            if(i != parameters.size - 1)
+                sb.append(", ");
+        }
+        sb.append (") ");
+        sig.body.accept (this);
+        sb.append (tmp_string);
+        tmp_string = sb.str;
     }
 
     public override void visit_sizeof_expression (SizeofExpression expr) {
@@ -597,7 +726,10 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_type_check (TypeCheck expr) {
-
+        expr.expression.accept (this);
+        var tmp = tmp_string;
+        expr.type_reference.accept (this);
+        tmp_string = tmp + " is " + tmp_string;
     }
 
     public override void visit_type_parameter (TypeParameter p)  {
