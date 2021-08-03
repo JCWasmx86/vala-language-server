@@ -1,0 +1,5 @@
+namespace Foo{
+class Bar {
+
+}
+}

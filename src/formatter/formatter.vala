@@ -140,6 +140,7 @@ class Vls.Formatter : Object{
         Vala.CodeContext.push (_input.second.code_context);
         FormattingVisitor fv = new FormattingVisitor ();
         fv.visit_source_file (this._input.first);
+        fv.get_string ();
         Vala.CodeContext.pop ();
     }
     public string? format_2 (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {

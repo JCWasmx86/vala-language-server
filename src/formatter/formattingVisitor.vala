@@ -15,7 +15,7 @@ class Vls.FormattingVisitor : CodeVisitor {
         config = new FormattingConfig();
     }
     public override void visit_addressof_expression (Vala.AddressofExpression expr) {
-        expr.accept_children (this);
+        expr.accept (this);
         tmp_string = "&" + tmp_string;
     }
 
@@ -38,21 +38,21 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_assignment(Vala.Assignment expr) {
-        expr.left.accept_children (this);
+        expr.left.accept (this);
         var left_side = tmp_string;
-        expr.right.accept_children (this);
+        expr.right.accept (this);
         var right_side = tmp_string;
         tmp_string = right_side + " " + expr.operator.to_string () + " " + left_side;
     }
 
     public override void visit_base_access(Vala.BaseAccess expr) {
-        tmp_string =  "base";
+        tmp_string = "base";
     }
 
     public override void visit_binary_expression(Vala.BinaryExpression expr) {
-        expr.left.accept_children (this);
+        expr.left.accept (this);
         var left_side = tmp_string;
-        expr.right.accept_children (this);
+        expr.right.accept (this);
         var right_side = tmp_string;
         tmp_string = right_side + " " + expr.operator.to_string () + " " + left_side;
     }
@@ -63,11 +63,11 @@ class Vls.FormattingVisitor : CodeVisitor {
             sb.append_c ('\n').append(generate_indentation ()).append("{\n");
         else
             sb.append("{\n");
-        warning("Depth: %u", indentation_depth);
         indentation_depth++;
         foreach(var stmt in expr.get_statements ()) {
+            tmp_string = "";
             stmt.accept (this);
-            sb.append(tmp_string).append_c ('\n');
+            sb.append(generate_indentation ()).append(tmp_string).append_c ('\n');
         }
         indentation_depth--;
         sb.append("\n").append(generate_indentation ()).append ("}\n");
@@ -82,16 +82,16 @@ class Vls.FormattingVisitor : CodeVisitor {
         tmp_string = "break;";
     }
     public override void visit_cast_expression(Vala.CastExpression expr) {
-        expr.inner.accept_children(this);
+        expr.inner.accept(this);
         if(expr.is_non_null_cast) {
             tmp_string = "(!) " + tmp_string;
         } else if(expr.is_silent_cast) {
             var inner = tmp_string;
-            expr.type_reference.accept_children(this);
+            expr.type_reference.accept(this);
             tmp_string = inner + " as " + tmp_string;
         } else {
             var inner = tmp_string;
-            expr.type_reference.accept_children(this);
+            expr.type_reference.accept(this);
             tmp_string = "(" + tmp_string + ") " + inner;
         }
     }
@@ -151,7 +151,9 @@ class Vls.FormattingVisitor : CodeVisitor {
         foreach (var member in expr.get_members ()) {
             tmp_string = "";
             member.accept (this);
-            sb.append (tmp_string);
+            // TODO: Check if this can be removed sometime
+            if(tmp_string.length > 0)
+                sb.append(generate_indentation ()).append (tmp_string);
         }
         indentation_depth--;
         sb.append("\n").append(generate_indentation ()).append ("}\n");
@@ -159,21 +161,43 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_conditional_expression(Vala.ConditionalExpression expr) {
-        expr.condition.accept_children(this);
+        expr.condition.accept(this);
         var condition = tmp_string;
-        expr.true_expression.accept_children(this);
+        expr.true_expression.accept(this);
         var true_expr = tmp_string;
-        expr.false_expression.accept_children(this);
+        expr.false_expression.accept(this);
         var false_expr = tmp_string;
         tmp_string = condition + " ? " + true_expr + " : " + false_expr;
     }
 
     public override void visit_constant(Vala.Constant expr) {
-        warning("Unimplemented Constant: %s", expr.to_string());
+        var sb = new StringBuilder ();
+        sb.append (expr.access.to_string ()).append (" ");
+        if(expr.is_extern)
+            sb.append ("extern ");
+        if(!expr.is_instance_member ())
+            sb.append ("static ");
+        // TODO: Arrays
+        sb.append ("const ").append (expr.type_name.to_string ()).append (expr.name);
+        if(expr.value != null) {
+            sb.append (" = ");
+            expr.value.accept (this);
+            sb.append (tmp_string);
+        }
+        sb.append_c(';');
+        tmp_string = sb.str;
     }
 
     public override void visit_constructor(Vala.Constructor expr) {
-        warning("Unimplemented Constructor: %s", expr.to_string());
+        var sb = new StringBuilder ();
+        if(expr.binding == MemberBinding.CLASS)
+            sb.append ("class ");
+        else if(expr.binding == MemberBinding.STATIC)
+            sb.append ("static ");
+        sb.append ("construct ");
+        expr.body.accept (this);
+        sb.append (tmp_string);
+        tmp_string = sb.str;
     }
     
     public override void visit_continue_statement(Vala.ContinueStatement expr) {
@@ -181,15 +205,76 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_creation_method(Vala.CreationMethod expr) {
-        warning("Unimplemented CreationMethod: %s", expr.to_string());
+        if(expr.source_reference == null)
+            return;
+        var sb = new StringBuilder ();
+        sb.append (expr.access.to_string ()).append_c (' ');
+        // TODO: Not all make sense, but are allowed according to the grammar.
+        if(expr.is_abstract)
+            sb.append ("abstract ");
+        if(expr.is_async_callback)
+            sb.append ("async ");
+        if(expr.is_extern)
+            sb.append ("extern ");
+        if(expr.is_inline)
+            sb.append ("inline ");
+        if(expr.binding == MemberBinding.STATIC)
+            sb.append ("static ");
+        if(expr.is_virtual)
+            sb.append ("virtual ");
+        if(expr.overrides)
+            sb.append ("override ");
+        sb.append (expr.return_type.to_string ()).append_c (' ').append (expr.class_name);
+        if(expr.has_type_parameters ()) {
+            sb.append_c ('<');
+            var parameters = expr.get_type_parameters ();
+            for(var i = 0; i < parameters.size; i++) {
+                sb.append (parameters.get (i).to_string ());
+                if(i != parameters.size - 1)
+                    sb.append(", ");
+            }
+            sb.append_c ('>');
+        }
+        if(config.get_bool ("space_before_parentheses"))
+            sb.append_c (' ');
+        sb.append_c ('(');
+        var parameters = expr.get_parameters ();
+        for(int i = 0; i < parameters.size; i++) {
+            sb.append (parameters.get (i).variable_type.symbol.name).append_c (' ').append (parameters.get (i).name);
+            if(i != parameters.size - 1)
+                sb.append (", ");
+        }
+        sb.append (") ");
+        var thrown = new Vala.ArrayList<DataType>();
+        // TODO: Sort?
+        expr.get_error_types (thrown);
+        if(thrown.size > 0) {
+            sb.append ("throws ");
+            for(int i = 0; i < thrown.size; i++) {
+                sb.append (thrown.get (i).to_string ());
+                if(i != thrown.size)
+                    sb.append(", ");
+            }
+        }
+        if(expr.is_abstract)
+            sb.append (";\n");
+        else {
+            tmp_string = "";
+            expr.body.accept (this);
+            sb.append (tmp_string);
+        }
+        tmp_string = sb.str;
     }
 
     public override void visit_data_type(Vala.DataType expr) {
-        
+        warning ("%s", expr.to_string ());
+        tmp_string = expr.to_string ();
     }
 
     public override void visit_declaration_statement (DeclarationStatement stmt) {
-
+        if(stmt.source_reference == null || stmt.declaration.source_reference == null)
+            return;
+        stmt.declaration.accept (this);
     }
 
     public override void visit_delegate (Delegate d) {
@@ -197,7 +282,7 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_delete_statement (DeleteStatement stmt) {
-        stmt.expression.accept_children(this);
+        stmt.expression.accept(this);
         tmp_string = "delete " + tmp_string + ";";
     }
     public override void visit_destructor (Destructor d) {
@@ -224,7 +309,7 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_error_code (ErrorCode ecode) {
-
+        
     }
 
     public override void visit_error_domain (ErrorDomain edomain) {
@@ -303,7 +388,7 @@ class Vls.FormattingVisitor : CodeVisitor {
             sb.append ("extern ");
         if(m.is_inline)
             sb.append ("inline ");
-        if(!m.is_class_member ())
+        if(m.binding == MemberBinding.STATIC)
             sb.append ("static ");
         if(m.is_abstract)
             sb.append ("abstract ");
@@ -327,7 +412,7 @@ class Vls.FormattingVisitor : CodeVisitor {
         sb.append_c ('(');
         var parameters = m.get_parameters ();
         for(int i = 0; i < parameters.size; i++) {
-            sb.append (parameters.get (i).to_string ());
+            sb.append (parameters.get (i).variable_type.symbol.name).append_c (' ').append (parameters.get (i).name);
             if(i != parameters.size - 1)
                 sb.append (", ");
         }
@@ -365,6 +450,8 @@ class Vls.FormattingVisitor : CodeVisitor {
         if(config.get_bool("indent_after_namespace"))
             indentation_depth++;
         
+        if(config.get_bool ("indent_after_namespace"))
+            indentation_depth--;
     }
 
     public override void visit_null_literal (NullLiteral lit) {
@@ -376,11 +463,12 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_pointer_indirection (PointerIndirection expr) {
-
+        expr.inner.accept (this);
+        tmp_string = "*" + tmp_string;
     }
 
     public override void visit_postfix_expression (PostfixExpression expr) {
-        expr.inner.accept_children (this);
+        expr.inner.accept (this);
         tmp_string += (expr.increment ? "++" : "--");
     }
 
@@ -393,7 +481,7 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_real_literal (RealLiteral lit) {
-
+        tmp_string = lit.to_string ();
     }
 
     public override void visit_reference_transfer_expression (ReferenceTransferExpression expr) {
@@ -405,7 +493,7 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_return_statement (ReturnStatement stmt) {
-        stmt.return_expression.accept_children (this);
+        stmt.return_expression.accept (this);
         tmp_string = "return " + tmp_string;
     }
 
@@ -414,14 +502,27 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_sizeof_expression (SizeofExpression expr) {
-        
+        var sb = new StringBuilder ("sizeof");
+        if(config.get_bool ("space_before_parentheses"))
+            sb.append_c (' ');
+        sb.append_c ('(');
+        expr.type_reference.accept (this);
+        sb.append (tmp_string).append_c (')');
+        tmp_string = sb.str;
     }
 
     public override void visit_slice_expression (SliceExpression expr) {
-
+        expr.container.accept (this);
+        var tmp = tmp_string;
+        expr.start.accept (this);
+        tmp += "[" + tmp_string;
+        expr.stop.accept (this);
+        tmp += ":" + tmp_string + "]";
+        tmp_string = tmp;
     }
 
     public override void visit_source_file (SourceFile source_file) {
+        indentation_depth = 0;
         if(config.get_bool ("sort_usings")) {
             source_file.current_using_directives.sort ((a, b) => {
                 return ((Namespace) a.namespace_symbol).name.collate(((Namespace) b.namespace_symbol).name);
@@ -436,17 +537,21 @@ class Vls.FormattingVisitor : CodeVisitor {
             directive.accept (this);
             this.builder.append (tmp_string).append_c ('\n');
         }
-        this.builder.append ("\n\n");
+        if(!source_file.current_using_directives.is_empty)
+            this.builder.append ("\n\n");
         foreach (var node in source_file.get_nodes ()) {
             tmp_string = "";
+            var old_depth = indentation_depth;
             node.accept (this);
-            this.builder.append (tmp_string).append_c ('\n');
+            var new_depth = indentation_depth;
+            assert(old_depth == new_depth);
+            this.builder.append (generate_indentation ()).append (tmp_string).append_c ('\n');
         }
         GLib.stderr.puts (this.builder.str);
     }
 
     public override void visit_string_literal (StringLiteral lit) {
-
+        tmp_string = lit.to_string ();
     }
 
     public override void visit_struct (Struct st) {
@@ -470,7 +575,7 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_throw_statement (ThrowStatement stmt) {
-        stmt.accept_children (this);
+        stmt.accept (this);
         tmp_string = "throw " + tmp_string + ";";
     }
 
@@ -479,7 +584,16 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_tuple (Tuple tuple) {
-
+        var sb = new StringBuilder ("(");
+        var len = tuple.get_expressions ().size;
+        for(var i = 0; i < len; i++) {
+            tuple.get_expressions ().get(i).accept (this);
+            sb.append (tmp_string);
+            if(i != len - 1)
+                sb.append (", ");
+        }
+        sb.append_c (')');
+        tmp_string = sb.str;
     }
 
     public override void visit_type_check (TypeCheck expr) {
@@ -487,19 +601,25 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_type_parameter (TypeParameter p)  {
-
+        tmp_string = p.name;
     }
 
     public override void visit_typeof_expression (TypeofExpression expr) {
-
+        var sb = new StringBuilder ("typeof");
+        if(config.get_bool ("space_before_parentheses"))
+            sb.append_c (' ');
+        sb.append_c ('(');
+        expr.type_reference.accept (this);
+        sb.append (tmp_string).append_c (')');
+        tmp_string = sb.str;
     }
     public override void visit_unary_expression (UnaryExpression expr) {
-        expr.inner.accept_children (this);
+        expr.inner.accept (this);
         tmp_string = expr.operator.to_string () + tmp_string;
     }
 
     public override void visit_unlock_statement (UnlockStatement stmt) {
-        stmt.accept_children (this);
+        stmt.accept (this);
         tmp_string = "unlock(" + tmp_string + ")";
     }
 
@@ -508,7 +628,15 @@ class Vls.FormattingVisitor : CodeVisitor {
     }
 
     public override void visit_while_statement (WhileStatement stmt) {
-
+        stmt.condition.accept (this);
+        var sb = new StringBuilder ();
+        sb.append ("while");
+        if(config.get_bool ("space_before_parentheses"))
+            sb.append_c (' ');
+        sb.append_c ('(').append(tmp_string).append_c (')');
+        stmt.body.accept (this);
+        sb.append (tmp_string);
+        tmp_string = sb.str;
     }
 
 #if VALA_0_50
@@ -519,7 +647,7 @@ class Vls.FormattingVisitor : CodeVisitor {
 
 
     public override void visit_yield_statement (YieldStatement y) {
-
+        tmp_string = "yield";
     }
     string generate_indentation () {
         // TODO: StringBuilder or caching instead of this loop?
@@ -528,5 +656,9 @@ class Vls.FormattingVisitor : CodeVisitor {
             ret += "\t";
         }
         return ret;
+    }
+
+    public string get_string() {
+        return this.builder.str;
     }
 }
