@@ -58,10 +58,7 @@ add_project_arguments(['--enable-gobject-tracing', '--fatal-warnings'], language
 extra_vala_sources = files([
   'src/util.vala'
 ])
-formatting_visitor = files([
-  'src/formatter/formattingVisitor.vala',
-  'src/formatter/formattingConfig.vala'
-])
+
 if host_machine.system() == 'windows'
     deps += dependency('gio-windows-2.0')
     extra_vala_sources += files(['src/windows.vapi'])

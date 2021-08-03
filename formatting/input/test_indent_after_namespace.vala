@@ -1,5 +1,0 @@
-namespace Foo{
-class Bar {
-
-}
-}
