@@ -6,7 +6,10 @@ class Vls.Formatter : Object{
     private int _start_line;
     private int _end_line;
     private string _indenting_string;
+    private uint expected_indentation_depth;
+#if A || B
 
+#endif
     public Formatter (Lsp.FormattingOptions options, Pair<Vala.SourceFile, Compilation> input, Lsp.Range? range) {
         _options = options;
         _input = input;
@@ -27,7 +30,7 @@ class Vls.Formatter : Object{
     public string? format (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {
         error = 0;
         var new_lines = new ArrayList<string> ();
-        var expected_indentation_depth = 0;
+        expected_indentation_depth = 0;
         var source_file = _input.first;
         bool is_in_multiline_comment = false;
         for (int i = _start_line; i <= _end_line; i++) {
@@ -39,48 +42,34 @@ class Vls.Formatter : Object{
             if(line_to_format == null) {
                 break;
             }
+            // Remove trailing/leading spaces, to restore indents
             var trimmed_line = line_to_format.strip ();
-            // Indented lines with no other content are replaced by really empty lines
+            // Indented lines with no other content are replaced by really empty lines or one with a star
+            // for multiline comments
             if(trimmed_line.length == 0) {
                 new_lines.add (is_in_multiline_comment ? (generate_indentation (expected_indentation_depth) + " *") : "");
                 continue;
             }
             if(is_in_multiline_comment) {
-                var indent = generate_indentation (expected_indentation_depth) +"";
-                if(trimmed_line.has_suffix ("*/")) {
-                    new_lines.add (indent + "*/");
-                    is_in_multiline_comment = false;
-                } else  {
-                    string to_add = trimmed_line;
-                    if(trimmed_line.has_prefix ("*")) {
-                        to_add = trimmed_line.slice (1, trimmed_line.length);
-                    }
-                    new_lines.add (indent + "* " + to_add.strip ());
-                }
+                this.handle_multiline_comment (trimmed_line, new_lines, ref is_in_multiline_comment);
                 continue;
                 // Preprocessor statements are not indented
             } else if (trimmed_line.has_prefix ("#")) {
-                new_lines.add (trimmed_line);
+                // TODO: Format this
+                new_lines.add (this.format_preprocessor (trimmed_line));
                 continue;
             }
             string ? raw_string = null;
             // Skip multiline comments, that are just one line
-            if(trimmed_line.has_prefix ("/* ") || trimmed_line.has_prefix ("/** ") && trimmed_line.has_suffix ("*/")) {
-                raw_string = trimmed_line;
+            if((trimmed_line.has_prefix ("/*") || trimmed_line.has_prefix ("/**")) && trimmed_line.has_suffix ("*/")) {
+                raw_string = this.format_single_line_multiline_comment (trimmed_line);
             } else if(trimmed_line.has_prefix ("/*")) {
                 is_in_multiline_comment = true;
-                var is_doc = trimmed_line.has_prefix ("/**");
-                var maybe_string = trimmed_line.slice (is_doc ? 3 : 2, trimmed_line.length).strip ();
-                var indent = generate_indentation (expected_indentation_depth);
-                new_lines.add (indent + (is_doc  ? "/**"   : "/*"));
-                if(maybe_string.length > 0) {
-                    new_lines.add (indent + " * " + maybe_string);
-                }
+                this.handle_multiline_comment_start (trimmed_line, new_lines);
                 continue;
             } else if (trimmed_line.has_prefix ("//")) {
                 // Convert "//<someComment>" to "// <someComment>"
-                var comment = trimmed_line.slice (2, trimmed_line.length).strip ();
-                raw_string = "// " + comment;
+                raw_string = "// " + trimmed_line.slice (2, trimmed_line.length).strip ();
             } else if (trimmed_line.has_suffix ("{")) {
                 if(!trimmed_line.has_prefix ("}")) {
                     // After if() {, while() {, ..., indent the body one unit further...
@@ -94,7 +83,7 @@ class Vls.Formatter : Object{
                 raw_string = trimmed_line;
             } else {
                 // Just a normal line.
-                raw_string = format_line (format_line (trimmed_line));
+                raw_string = format_line (trimmed_line);
             }
             new_lines.add (generate_indentation (expected_indentation_depth) + raw_string);
         }
@@ -120,6 +109,82 @@ class Vls.Formatter : Object{
             newText = new_file.str.strip () + "\n"
         };
         return null;
+    }
+    string format_preprocessor(string line) {
+        // Some maybe use "# if ..." instead of "#if ..."
+        var initial = line.replace("# ", "").strip();
+        if (initial == "#endif" || initial == "#else")
+        return initial;
+        var directive = initial.split (" ")[0];
+        var sb = new StringBuilder("");
+        sb.append (directive).append_c (' ');
+        for(var i = 1 + directive.length; i < initial.length; i++) {
+            var current_char = (char) initial.data[i];
+            var next_char = (char)(i + 1  < initial.length  ? initial.data[i + 1]  : '\0');
+            var overnext_char = (char)(i + 1 < initial.length ? initial.data[i + 2] : '\0');
+            var last_char = (char)(sb.len == 0  ? '\0'  : sb.str.data[i - 1]);
+            var is_binary_op = current_char == '|' || current_char == '&' || current_char == '=';
+            if(is_binary_op && next_char == current_char) {
+                if (!last_char.isspace ())
+                sb.append_c (' ');
+                sb.append_c (current_char).append_c (next_char);
+                if (!overnext_char.isspace ())
+                sb.append_c (' ');
+                i++;
+                continue;
+            } else if (current_char == '!' && next_char == '=') {
+                if (!last_char.isspace ())
+                sb.append_c (' ');
+                sb.append ("!=");
+                if (!overnext_char.isspace ())
+                sb.append_c (' ');
+                i++;
+                continue;
+            }
+            sb.append_c (current_char);
+        }
+        while(true) {
+            var old = sb.str.length;
+            sb.str = sb.str.replace ("  ", " ");
+            var new_length = sb.str.length;
+            if (old == new_length)
+            return sb.str;
+        }
+    }
+    void handle_multiline_comment(string trimmed_line, Gee.List<string> new_lines, ref bool is_in_multiline_comment) {
+        var indent = generate_indentation (expected_indentation_depth) +"";
+        if(trimmed_line.has_suffix ("*/")) {
+            new_lines.add (indent + "*/");
+            is_in_multiline_comment = false;
+        } else  {
+            string to_add = trimmed_line;
+            if(trimmed_line.has_prefix ("*")) {
+                to_add = trimmed_line.slice (1, trimmed_line.length);
+            }
+            new_lines.add (indent + "* " + to_add.strip ());
+        }
+    }
+    void handle_multiline_comment_start(string trimmed_line, Gee.List<string> new_lines) {
+        var is_doc = trimmed_line.has_prefix ("/**");
+        var maybe_string = trimmed_line.slice (is_doc ? 3 : 2, trimmed_line.length).strip ();
+        var indent = generate_indentation (expected_indentation_depth);
+        new_lines.add (indent + (is_doc  ? "/**"   : "/*"));
+        if(maybe_string.length > 0) {
+            new_lines.add (indent + " * " + maybe_string);
+        }
+    }
+    // Format /* ... */, but only if it is on a single line.
+    string format_single_line_multiline_comment(string trimmed_line) {
+        // Remove */
+        var ret = trimmed_line.slice (0, trimmed_line.length - 1).strip ();
+        bool is_doc = false;
+        if(trimmed_line.has_prefix ("/**")) {
+            ret = ret.slice (3, trimmed_line.length + 1).strip ();
+            is_doc = true;
+        } else {
+            ret = ret.slice (2, trimmed_line.length + 1).strip ();
+        }
+        return (is_doc ? "/** " : "/*") + ret + " */";
     }
     string format_line (string l) {
         var l_new = l;
@@ -156,8 +221,6 @@ class Vls.Formatter : Object{
                 i += 2;
                 if (!overnext_char.isspace ())
                 sb.append_c (' ');
-                else
-                i++;
                 sb.append (l_new.slice (i, l_new.length));
                 break;
             }
@@ -371,7 +434,6 @@ class Vls.Formatter : Object{
             case '*':
             case '/':
             case '%':
-            case '=':
             if (next_char == '=')
             length = 2;
             else
@@ -391,6 +453,12 @@ class Vls.Formatter : Object{
             return false;
             case 'i':
             if(next_char == 'n' || next_char == 's') {
+                length = 2;
+                return true;
+            }
+            return false;
+            case '=':
+            if(next_char == '>' || next_char == '=') {
                 length = 2;
                 return true;
             }
