@@ -220,30 +220,13 @@ class Vls.Formatter : Object{
                 sb.append_c (' ').append_c (current_char);
                 warning(sb.str);
                 continue;
-            }/*if(current_char.isspace () && is_postfix_op(next_char, overnext_char)) {
-                sb.append_c (next_char).append_c (overnext_char);
-                i += 2;
-                continue;
             }
-            if(last_char.isalnum () && is_op_char(next_char)) {
-                sb.append_c (' ').append_c (current_char);
-                continue;
-            }*/
             if(current_char == ')' && next_char.isspace () && overnext_char == '(') {
                 sb.append_c (')').append ("(");
                 i += 2;
                 warning(sb.str);
                 continue;
-            }/*if(is_single_char_op (current_char, next_char)) {
-                sb.append_c (current_char).append_c (' ').append_c (next_char);
-                i++;
-                continue;
             }
-            if((is_op (current_char, next_char) || is_op(next_char, '\0')) && overnext_char.isalnum ()) {
-                sb.append_c (current_char).append_c (next_char).append_c (' ').append_c (overnext_char);
-                i += 2;
-                continue;
-            }*/
             if(current_char == '<') {
                 var saved_i = i;
                 i++; // Skip '<'
@@ -274,26 +257,22 @@ class Vls.Formatter : Object{
                     sb.append (string_to_add);
                 } else {
                     i = saved_i;
+                    if(!last_char.isspace ())
+                        sb.append_c (' ');
                     if(next_char == current_char && overnext_char == '=') {
-                        if(!last_char.isspace ())
-                            sb.append_c (' ');
                         i += 2;
-                        sb.append ("<<= ");
+                        sb.append ("<<=");
                     } else if(next_char == '='){
                         i++;
-                        if(!last_char.isspace ())
-                            sb.append_c (' ');
-                        sb.append ("<= ");
+                        sb.append ("<=");
                     } else if (next_char == current_char) {
                         i++;
-                        if(!last_char.isspace ())
-                            sb.append_c (' ');
-                        sb.append ("<< ");
+                        sb.append ("<<");
                     } else {
                         sb.append_c ('<');
-                        if(!next_char.isspace ())
-                            sb.append_c (' ');
                     }
+                    if(!next_char.isspace ())
+                        sb.append_c (' ');
                 }
                 warning(sb.str);
                 continue;
@@ -345,12 +324,6 @@ class Vls.Formatter : Object{
                 else
                     length = 1;
                 return true;
-            case '^':
-                if(next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
             case '+':
                 if(next_char == '+')
                     length = -1;
@@ -367,24 +340,10 @@ class Vls.Formatter : Object{
                 else
                     length = 1;
                 return true;
+            case '^':
             case '*':
-                if(next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
             case '/':
-                if(next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
             case '%':
-                if(next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
             case '=':
                 if(next_char == '=')
                     length = 2;
@@ -395,7 +354,7 @@ class Vls.Formatter : Object{
                 if(next_char == '=')
                     length = 2;
                 else
-                    length = 1;
+                    return false;
                 return true;
             case 'a':
                 if(next_char == 's') {
@@ -410,13 +369,16 @@ class Vls.Formatter : Object{
                 }
                 return false;
             case '>':
+                // Check for >>
                 if(next_char == current_char) {
                     length = 2;
+                    // Check for >>=
                     if(current_index + 2 < l.length && l.data[current_index + 2] == '=') {
                         length = 3;
                     }
                     return true;
                 }
+                //Check for >=
                 if(next_char == '=') {
                     length = 2;
                     return true;
