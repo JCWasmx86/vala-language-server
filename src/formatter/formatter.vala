@@ -1,7 +1,7 @@
 using Gee;
 
 class Vls.Formatter : Object{
-    private Pair <Vala.SourceFile, Compilation> _input;
+    private Pair<Vala.SourceFile, Compilation> _input;
     private Lsp.FormattingOptions _options;
     private int _start_line;
     private int _end_line;
@@ -17,7 +17,7 @@ class Vls.Formatter : Object{
             _start_line = (int) range.start.line;
             _end_line = (int) range.end.line;
         }
-        _indenting_string = options.insertSpaces ? string.nfill (options.tabSize, ' ')  : "\t";
+        _indenting_string = options.insertSpaces ? string.nfill (options.tabSize, ' ') : "\t";
     }
 
     /**
@@ -26,12 +26,12 @@ class Vls.Formatter : Object{
     */
     public string? format (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {
         error = 0;
-        var new_lines = new ArrayList < string >();
+        var new_lines = new ArrayList<string> ();
         var expected_indentation_depth = 0;
         var source_file = _input.first;
         bool is_in_multiline_comment = false;
         for (int i = _start_line; i <= _end_line; i++) {
-            warning("LINE:                                               %d", i);
+            warning ("LINE:                                               %d", i);
             // + 1, as libvala expects the line number to be 1-based,
             // while LSP provides it as 0-based.
             var line_to_format = source_file.get_source_line (i+ 1);
@@ -72,9 +72,9 @@ class Vls.Formatter : Object{
                 var is_doc = trimmed_line.has_prefix ("/**");
                 var maybe_string = trimmed_line.slice (is_doc ? 3 : 2, trimmed_line.length).strip ();
                 var indent = generate_indentation (expected_indentation_depth);
-                new_lines.add (indent + (is_doc ? "/**" : "/*"));
+                new_lines.add (indent + (is_doc  ? "/**"   : "/*"));
                 if(maybe_string.length > 0) {
-                    new_lines.add (indent +" * " + maybe_string);
+                    new_lines.add (indent + " * " + maybe_string);
                 }
                 continue;
             } else if (trimmed_line.has_prefix ("//")) {
@@ -117,7 +117,7 @@ class Vls.Formatter : Object{
                 }
             },
             // Just one final newline
-            newText = new_file.str.strip () +"\n"
+            newText = new_file.str.strip () + "\n"
         };
         return null;
     }
@@ -125,32 +125,44 @@ class Vls.Formatter : Object{
         var l_new = l;
         if(!l.contains("\"") && !l.contains("\'")) {
             l_new = l.replace ("  ", " ").replace ("\t\t", "\t");
-            l_new = l_new.replace (") (", ")(");
+            l_new = l_new.replace (") (", ")(").replace ("( )", "()");
         }
         var sb = new StringBuilder ();
         for(var i = 0; i < l_new.length; i++) {
             var current_char = (char) l_new.data[i];
-            var next_char = (char)(i + 1 < l_new.length  ? l_new.data[i + 1] : '\0');
-            var overnext_char = (char)(i + 2 < l_new.length  ? l_new.data[i + 2] : '\0');
-            var last_char = (char)(sb.len == 0  ? '\0' : sb.str.data[i - 1]);
-            warning("Is at %d (%c)\n", i, current_char);
+            var next_char = (char)(i + 1  < l_new.length  ? l_new.data[i + 1]  : '\0');
+            var overnext_char = (char)(i + 2  < l_new.length  ? l_new.data[i + 2]  : '\0');
+            var last_char = (char)(sb.len == 0  ? '\0'  : sb.str.data[i - 1]);
+            warning ("Is at %d (%c)\n", i, current_char);
             if(current_char == '\'') {
                 sb.append_c ('\'');
                 sb.append_c (next_char);
-                warning("Found char literal, next_char = %c, onc = %c", next_char, overnext_char);
+                warning ("Found char literal, next_char = %c, onc = %c", next_char, overnext_char);
                 if(next_char == '\\') {
                     // Skip \
                     i++;
                     sb.append_c (overnext_char);
                 }
-                //Skip char and '
+                // Skip char and '
                 i += 2;
                 sb.append_c ('\'');
-                warning(sb.str);
+                warning (sb.str);
                 continue;
             }
+            if(current_char == '/' &&  next_char == '/') {
+                if (!last_char.isspace ())
+                sb.append_c (' ');  // Fooo
+                sb.append ("//");
+                i += 2;
+                if (!overnext_char.isspace ())
+                sb.append_c (' ');
+                else
+                i++;
+                sb.append (l_new.slice (i, l_new.length));
+                break;
+            }
             if(current_char == '\"') {
-                uint count_to_find =0;
+                uint count_to_find = 0;
                 if(next_char == '\"' && overnext_char == '\"') {
                     sb.append_c ('\"').append_c ('\"');
                     count_to_find = 3;
@@ -161,7 +173,7 @@ class Vls.Formatter : Object{
                 } else {
                     return l;
                 }
-                warning("To find: %u", count_to_find);
+                warning ("To find: %u", count_to_find);
                 sb.append_c ('\"');
                 while(i < l_new.length) {
                     var c = l_new.data[i];
@@ -187,44 +199,44 @@ class Vls.Formatter : Object{
                         i++;
                     }
                 }
-                warning(sb.str);
+                warning (sb.str);
                 sb.append_c (l_new[i]);
                 continue;
             }
             if(current_char.isalnum() || current_char == '_') {
-                sb.append_c(current_char);
-                warning(sb.str);
+                sb.append_c (current_char);
+                warning (sb.str);
                 continue;
             }
             if(current_char.isspace () && next_char.isspace ()) {
                 sb.append_c (current_char);
                 i++;
-                warning(sb.str);
+                warning (sb.str);
                 continue;
             }
             if((current_char == ':' && !sb.str.contains("case ")) || current_char == '?') {
                 if (!last_char.isspace ())
-                    sb.append_c (' ');
+                sb.append_c (' ');
                 sb.append_c (current_char);
                 if (!next_char.isspace ())
-                    sb.append_c (' ');
-                warning(sb.str);
+                sb.append_c (' ');
+                warning (sb.str);
                 continue;
             }
             if(last_char.isalnum () && current_char == '(') {
                 sb.append_c (' ').append_c ('(');
-                warning(sb.str);
+                warning (sb.str);
                 continue;
             }
             if(last_char == ',' && !current_char.isspace ()) {
                 sb.append_c (' ').append_c (current_char);
-                warning(sb.str);
+                warning (sb.str);
                 continue;
             }
             if(current_char == ')' && next_char.isspace () && overnext_char == '(') {
                 sb.append_c (')').append ("(");
                 i += 2;
-                warning(sb.str);
+                warning (sb.str);
                 continue;
             }
             if(current_char == '<') {
@@ -236,29 +248,40 @@ class Vls.Formatter : Object{
                     var looked_at = l_new.data[i];
                     i++;
                     // We can have e.g. Gee.List<Gee.List<T>>, nested generics
-                    if(looked_at == '<')
-                        open_pointy_parentheses++;
+                    if (looked_at == '<')
+                    open_pointy_parentheses++;
                     else if(looked_at == '>') {
                         open_pointy_parentheses--;
                         if(open_pointy_parentheses == 0) {
                             found_generics = true;
                             break;
                         }
-                    // This is not a generic, this is just a "<"(Or "<<", "<<=")
+                        // This is not a generic, this is just a "<"(Or "<<", "<<=")
                     } else if(looked_at == ')' || looked_at == '&' ||looked_at == '|' || looked_at == '(' || looked_at == '=' || looked_at == '<') {
                         break;
                     }
-                    if(i == l_new.length)
-                        break;
+                    if (i == l_new.length)
+                    break;
                 }
                 if(found_generics) {
-                    //Add spaces after commas
-                    var string_to_add = l_new.slice (saved_i, i + 1).replace (" ", "").replace (",", ", ");
+                    // To convert e.g. "Foo <T> bar;" to "Foo<T> bar;"
+                    if(last_char.isspace ()) {
+                        sb.erase (sb.str.length - 1, - 1);
+                    }
+                    // Add spaces after commas
+                    var string_to_add = l_new.slice (saved_i, i).replace (" ", "").replace (",", ", ");
                     sb.append (string_to_add);
+                    // To fix some issues
+                    i--;
+                    next_char = (char)(i + 1  < l_new.length  ? l_new.data[i + 1]  : '\0');
+                    overnext_char = (char)(i + 2  < l_new.length  ? l_new.data[i + 2]  : '\0');
+                    warning ("%c %c", next_char, overnext_char);
+                    if (!next_char.isspace ())
+                    sb.append_c (' ');
                 } else {
                     i = saved_i;
-                    if(!last_char.isspace ())
-                        sb.append_c (' ');
+                    if (!last_char.isspace ())
+                    sb.append_c (' ');
                     if(next_char == current_char && overnext_char == '=') {
                         i += 2;
                         sb.append ("<<=");
@@ -271,120 +294,124 @@ class Vls.Formatter : Object{
                     } else {
                         sb.append_c ('<');
                     }
-                    if(!next_char.isspace ())
-                        sb.append_c (' ');
+                    if (!next_char.isspace ())
+                    sb.append_c (' ');
                 }
-                warning(sb.str);
+                warning (sb.str);
                 continue;
             }
             int length_of_op;
             if(this.is_op (l_new, i, out length_of_op)) {
-                //Special case for pre-/post increment
+                // Special case for pre-/post increment
                 if(length_of_op == -1) {
                     i++;
                     sb.append_c (current_char).append_c (current_char);
-                    warning(sb.str);
+                    warning (sb.str);
                     continue;
                 } else {
                     i += length_of_op - 1;
-                    sb.append_c(current_char);
-                    if(length_of_op == 2)
-                        sb.append_c (next_char);
-                    if(length_of_op == 3)
-                        sb.append_c (overnext_char);
-                    warning(sb.str);
+                    sb.append_c (current_char);
+                    if (length_of_op == 2)
+                    sb.append_c (next_char);
+                    if (length_of_op == 3)
+                    sb.append_c (overnext_char);
+                    if(i + 1 < l_new.length) {
+                        if (!((char)l_new.data[i + 1]).isspace ())
+                        sb.append_c (' ');
+                    }
+                    warning (sb.str);
                     continue;
                 }
             }
-            warning(sb.str);
+            warning (sb.str);
             sb.append_c (current_char);
         }
         var l_new2 = sb.str;
         if(!sb.str.contains("\"") && !sb.str.contains("\'")) {
             l_new2 = sb.str.replace ("  ", " ").replace ("\t\t", "\t");
-            l_new2 = l_new2.replace (") (", ")(").replace (" )", ")");
+            l_new2 = l_new2.replace (") (", ")(").replace (" )", ")").replace ("( )", "()");
         }
-        warning("Returning: %s", sb.str);
+        warning ("Returning: %s", sb.str);
         return sb.str;
     }
     bool is_op(string l, uint current_index, out int length) {
         length = 0;
         var current_char = l.data[current_index];
-        var next_char = current_index + 1 < l.length? l.data[current_index + 1] : '\0';
+        var next_char = current_index + 1  < l.length  ? l.data[current_index + 1]  : '\0';
         switch(current_char) {
             case '&':
-                if(next_char == '&' || next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
+            if (next_char == '&' || next_char == '=')
+            length = 2;
+            else
+            length = 1;
+            return true;
             case '|':
-                if(next_char == '|' || next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
+            if (next_char == '|' || next_char == '=')
+            length = 2;
+            else
+            length = 1;
+            return true;
             case '+':
-                if(next_char == '+')
-                    length = -1;
-                else if(next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
+            if (next_char == '+')
+            length = - 1;
+            else if (next_char == '=')
+            length = 2;
+            else
+            length = 1;
+            return true;
             case '-':
-                if(next_char == '-')
-                    length = -1;
-                else if(next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
+            if (next_char == '-')
+            length = - 1;
+            else if (next_char == '=')
+            length = 2;
+            else
+            length = 1;
+            return true;
             case '^':
             case '*':
             case '/':
             case '%':
             case '=':
-                if(next_char == '=')
-                    length = 2;
-                else
-                    length = 1;
-                return true;
+            if (next_char == '=')
+            length = 2;
+            else
+            length = 1;
+            return true;
             case '!':
-                if(next_char == '=')
-                    length = 2;
-                else
-                    return false;
-                return true;
+            if (next_char == '=')
+            length = 2;
+            else
+            return false;
+            return true;
             case 'a':
-                if(next_char == 's') {
-                    length = 2;
-                    return true;
-                }
-                return false;
+            if(next_char == 's') {
+                length = 2;
+                return true;
+            }
+            return false;
             case 'i':
-                if(next_char == 'n' || next_char == 's') {
-                    length = 2;
-                    return true;
-                }
-                return false;
+            if(next_char == 'n' || next_char == 's') {
+                length = 2;
+                return true;
+            }
+            return false;
             case '>':
-                // Check for >>
-                if(next_char == current_char) {
-                    length = 2;
-                    // Check for >>=
-                    if(current_index + 2 < l.length && l.data[current_index + 2] == '=') {
-                        length = 3;
-                    }
-                    return true;
+            // Check for >>
+            if(next_char == current_char) {
+                length = 2;
+                // Check for >>=
+                if(current_index + 2 < l.length && l.data[current_index + 2] == '=') {
+                    length = 3;
                 }
-                //Check for >=
-                if(next_char == '=') {
-                    length = 2;
-                    return true;
-                }
-                length = 0;
-                return false;
+                return true;
+            }
+            // Check for >=
+            if(next_char == '=') {
+                length = 2;
+                return true;
+            }
+            length = 0;
+            return false;
         }
         // '<' is handled with the generics
         return false;
