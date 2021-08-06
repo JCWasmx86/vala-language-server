@@ -7,9 +7,8 @@ class Vls.Formatter : Object{
     private int _end_line;
     private string _indenting_string;
     private uint expected_indentation_depth;
-#if A || B
+    private uint is_in_onetime_indent;
 
-#endif
     public Formatter (Lsp.FormattingOptions options, Pair<Vala.SourceFile, Compilation> input, Lsp.Range? range) {
         _options = options;
         _input = input;
@@ -33,11 +32,12 @@ class Vls.Formatter : Object{
         expected_indentation_depth = 0;
         var source_file = _input.first;
         bool is_in_multiline_comment = false;
+        is_in_onetime_indent = 0;
         for (int i = _start_line; i <= _end_line; i++) {
-            warning ("LINE:                                               %d", i);
+            warning ("LINE:                                               %d %u", i, is_in_onetime_indent);
             // + 1, as libvala expects the line number to be 1-based,
             // while LSP provides it as 0-based.
-            var line_to_format = source_file.get_source_line (i+ 1);
+            var line_to_format = source_file.get_source_line (i + 1);
             // EOF reached
             if(line_to_format == null) {
                 break;
@@ -47,7 +47,7 @@ class Vls.Formatter : Object{
             // Indented lines with no other content are replaced by really empty lines or one with a star
             // for multiline comments
             if(trimmed_line.length == 0) {
-                new_lines.add (is_in_multiline_comment ? (generate_indentation (expected_indentation_depth) + " *") : "");
+                new_lines.add (is_in_multiline_comment ? (generate_indentation (expected_indentation_depth + is_in_onetime_indent) + " *") : "");
                 continue;
             }
             if(is_in_multiline_comment) {
@@ -59,6 +59,7 @@ class Vls.Formatter : Object{
                 new_lines.add (this.format_preprocessor (trimmed_line));
                 continue;
             }
+            var to_add = 0;
             string ? raw_string = null;
             // Skip multiline comments, that are just one line
             if((trimmed_line.has_prefix ("/*") || trimmed_line.has_prefix ("/**")) && trimmed_line.has_suffix ("*/")) {
@@ -75,17 +76,31 @@ class Vls.Formatter : Object{
                     // After if() {, while() {, ..., indent the body one unit further...
                     expected_indentation_depth++;
                 } // ..., but for } else [if()] {, not
-                new_lines.add (generate_indentation (expected_indentation_depth - 1) + trimmed_line);
+                new_lines.add (generate_indentation (expected_indentation_depth + is_in_onetime_indent - 1) + trimmed_line);
                 continue;
             } else if (trimmed_line.has_prefix ("}")) {
                 // If a method/block/namespace/class ends, reduce the indentation
                 expected_indentation_depth--;
-                raw_string = trimmed_line;
+                raw_string = format_line (trimmed_line);
             } else {
+                var next_line = source_file.get_source_line (i + 2);
+                var no_opening = (!trimmed_line.has_prefix ("{")  && !next_line.has_prefix ("{")) && trimmed_line.has_suffix (")");
+                warning ("`%s\', %s", trimmed_line, no_opening.to_string ());
+                if(no_opening) {
+                    if(trimmed_line.has_prefix("for") || trimmed_line.has_prefix("foreach") || trimmed_line.has_prefix("for") || trimmed_line.has_prefix("do") ||trimmed_line.has_prefix("if") ||trimmed_line.has_prefix("else")) {
+                        to_add = 1;
+                    } else if(trimmed_line.has_prefix("while") && no_opening && !trimmed_line.contains(");")) {
+                        to_add = 1;
+                    }
+                } else {
+                    if (is_in_onetime_indent > 0)
+                        to_add = - 1;
+                }
                 // Just a normal line.
                 raw_string = format_line (trimmed_line);
             }
-            new_lines.add (generate_indentation (expected_indentation_depth) + raw_string);
+            new_lines.add (generate_indentation (expected_indentation_depth + is_in_onetime_indent) + raw_string);
+            is_in_onetime_indent += to_add;
         }
         var new_file = new StringBuilder.sized (new_lines.size * 80);
         foreach (var line in new_lines) {
@@ -114,7 +129,7 @@ class Vls.Formatter : Object{
         // Some maybe use "# if ..." instead of "#if ..."
         var initial = line.replace("# ", "").strip();
         if (initial == "#endif" || initial == "#else")
-        return initial;
+            return initial;
         var directive = initial.split (" ")[0];
         var sb = new StringBuilder("");
         sb.append (directive).append_c (' ');
@@ -126,18 +141,18 @@ class Vls.Formatter : Object{
             var is_binary_op = current_char == '|' || current_char == '&' || current_char == '=';
             if(is_binary_op && next_char == current_char) {
                 if (!last_char.isspace ())
-                sb.append_c (' ');
+                    sb.append_c (' ');
                 sb.append_c (current_char).append_c (next_char);
                 if (!overnext_char.isspace ())
-                sb.append_c (' ');
+                    sb.append_c (' ');
                 i++;
                 continue;
             } else if (current_char == '!' && next_char == '=') {
                 if (!last_char.isspace ())
-                sb.append_c (' ');
+                    sb.append_c (' ');
                 sb.append ("!=");
                 if (!overnext_char.isspace ())
-                sb.append_c (' ');
+                    sb.append_c (' ');
                 i++;
                 continue;
             }
@@ -148,11 +163,11 @@ class Vls.Formatter : Object{
             sb.str = sb.str.replace ("  ", " ");
             var new_length = sb.str.length;
             if (old == new_length)
-            return sb.str;
+                return sb.str;
         }
     }
     void handle_multiline_comment(string trimmed_line, Gee.List<string> new_lines, ref bool is_in_multiline_comment) {
-        var indent = generate_indentation (expected_indentation_depth) +"";
+        var indent = generate_indentation (expected_indentation_depth + is_in_onetime_indent) +"";
         if(trimmed_line.has_suffix ("*/")) {
             new_lines.add (indent + "*/");
             is_in_multiline_comment = false;
@@ -167,7 +182,7 @@ class Vls.Formatter : Object{
     void handle_multiline_comment_start(string trimmed_line, Gee.List<string> new_lines) {
         var is_doc = trimmed_line.has_prefix ("/**");
         var maybe_string = trimmed_line.slice (is_doc ? 3 : 2, trimmed_line.length).strip ();
-        var indent = generate_indentation (expected_indentation_depth);
+        var indent = generate_indentation (expected_indentation_depth + is_in_onetime_indent);
         new_lines.add (indent + (is_doc  ? "/**"   : "/*"));
         if(maybe_string.length > 0) {
             new_lines.add (indent + " * " + maybe_string);
@@ -198,11 +213,9 @@ class Vls.Formatter : Object{
             var next_char = (char)(i + 1  < l_new.length  ? l_new.data[i + 1]  : '\0');
             var overnext_char = (char)(i + 2  < l_new.length  ? l_new.data[i + 2]  : '\0');
             var last_char = (char)(sb.len == 0  ? '\0'  : sb.str.data[i - 1]);
-            warning ("Is at %d (%c)\n", i, current_char);
             if(current_char == '\'') {
                 sb.append_c ('\'');
                 sb.append_c (next_char);
-                warning ("Found char literal, next_char = %c, onc = %c", next_char, overnext_char);
                 if(next_char == '\\') {
                     // Skip \
                     i++;
@@ -211,16 +224,15 @@ class Vls.Formatter : Object{
                 // Skip char and '
                 i += 2;
                 sb.append_c ('\'');
-                warning (sb.str);
                 continue;
             }
             if(current_char == '/' &&  next_char == '/') {
                 if (!last_char.isspace ())
-                sb.append_c (' ');  // Fooo
+                    sb.append_c (' ');
                 sb.append ("//");
                 i += 2;
                 if (!overnext_char.isspace ())
-                sb.append_c (' ');
+                    sb.append_c (' ');
                 sb.append (l_new.slice (i, l_new.length));
                 break;
             }
@@ -262,44 +274,38 @@ class Vls.Formatter : Object{
                         i++;
                     }
                 }
-                warning (sb.str);
+
                 sb.append_c (l_new[i]);
                 continue;
             }
             if(current_char.isalnum() || current_char == '_') {
                 sb.append_c (current_char);
-                warning (sb.str);
                 continue;
             }
             if(current_char.isspace () && next_char.isspace ()) {
                 sb.append_c (current_char);
                 i++;
-                warning (sb.str);
                 continue;
             }
             if((current_char == ':' && !sb.str.contains("case ")) || current_char == '?') {
                 if (!last_char.isspace ())
-                sb.append_c (' ');
+                    sb.append_c (' ');
                 sb.append_c (current_char);
                 if (!next_char.isspace ())
-                sb.append_c (' ');
-                warning (sb.str);
+                    sb.append_c (' ');
                 continue;
             }
             if(last_char.isalnum () && current_char == '(') {
                 sb.append_c (' ').append_c ('(');
-                warning (sb.str);
                 continue;
             }
             if(last_char == ',' && !current_char.isspace ()) {
                 sb.append_c (' ').append_c (current_char);
-                warning (sb.str);
                 continue;
             }
             if(current_char == ')' && next_char.isspace () && overnext_char == '(') {
                 sb.append_c (')').append ("(");
                 i += 2;
-                warning (sb.str);
                 continue;
             }
             if(current_char == '<') {
@@ -312,7 +318,7 @@ class Vls.Formatter : Object{
                     i++;
                     // We can have e.g. Gee.List<Gee.List<T>>, nested generics
                     if (looked_at == '<')
-                    open_pointy_parentheses++;
+                        open_pointy_parentheses++;
                     else if(looked_at == '>') {
                         open_pointy_parentheses--;
                         if(open_pointy_parentheses == 0) {
@@ -324,7 +330,7 @@ class Vls.Formatter : Object{
                         break;
                     }
                     if (i == l_new.length)
-                    break;
+                        break;
                 }
                 if(found_generics) {
                     // To convert e.g. "Foo <T> bar;" to "Foo<T> bar;"
@@ -340,11 +346,11 @@ class Vls.Formatter : Object{
                     overnext_char = (char)(i + 2  < l_new.length  ? l_new.data[i + 2]  : '\0');
                     warning ("%c %c", next_char, overnext_char);
                     if (!next_char.isspace ())
-                    sb.append_c (' ');
+                        sb.append_c (' ');
                 } else {
                     i = saved_i;
                     if (!last_char.isspace ())
-                    sb.append_c (' ');
+                        sb.append_c (' ');
                     if(next_char == current_char && overnext_char == '=') {
                         i += 2;
                         sb.append ("<<=");
@@ -358,9 +364,9 @@ class Vls.Formatter : Object{
                         sb.append_c ('<');
                     }
                     if (!next_char.isspace ())
-                    sb.append_c (' ');
+                        sb.append_c (' ');
                 }
-                warning (sb.str);
+
                 continue;
             }
             int length_of_op;
@@ -369,24 +375,24 @@ class Vls.Formatter : Object{
                 if(length_of_op == -1) {
                     i++;
                     sb.append_c (current_char).append_c (current_char);
-                    warning (sb.str);
                     continue;
                 } else {
+                    if (!last_char.isspace ())
+                        sb.append_c (' ');
                     i += length_of_op - 1;
                     sb.append_c (current_char);
                     if (length_of_op == 2)
-                    sb.append_c (next_char);
+                        sb.append_c (next_char);
                     if (length_of_op == 3)
-                    sb.append_c (overnext_char);
+                        sb.append_c (overnext_char);
                     if(i + 1 < l_new.length) {
                         if (!((char)l_new.data[i + 1]).isspace ())
-                        sb.append_c (' ');
+                            sb.append_c (' ');
                     }
-                    warning (sb.str);
                     continue;
                 }
             }
-            warning (sb.str);
+
             sb.append_c (current_char);
         }
         var l_new2 = sb.str;
@@ -404,29 +410,29 @@ class Vls.Formatter : Object{
         switch(current_char) {
             case '&':
             if (next_char == '&' || next_char == '=')
-            length = 2;
+                length = 2;
             else
             length = 1;
             return true;
             case '|':
             if (next_char == '|' || next_char == '=')
-            length = 2;
+                length = 2;
             else
             length = 1;
             return true;
             case '+':
             if (next_char == '+')
-            length = - 1;
+                length = - 1;
             else if (next_char == '=')
-            length = 2;
+                length = 2;
             else
             length = 1;
             return true;
             case '-':
             if (next_char == '-')
-            length = - 1;
+                length = - 1;
             else if (next_char == '=')
-            length = 2;
+                length = 2;
             else
             length = 1;
             return true;
@@ -435,13 +441,13 @@ class Vls.Formatter : Object{
             case '/':
             case '%':
             if (next_char == '=')
-            length = 2;
+                length = 2;
             else
             length = 1;
             return true;
             case '!':
             if (next_char == '=')
-            length = 2;
+                length = 2;
             else
             return false;
             return true;
