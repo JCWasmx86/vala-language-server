@@ -28,6 +28,12 @@ class Vls.Formatter : Object{
      */
     public string ? format (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {
         error = 0;
+        if(1 == 1) {
+            edit = null;
+            TokenFormatter formatter = new TokenFormatter(this._input.first);
+            formatter.format();
+            return null;
+        }
         var new_lines = new ArrayList<string> ();
         expected_indentation_depth = 0;
         var source_file = _input.first;
@@ -89,7 +95,7 @@ class Vls.Formatter : Object{
                 var no_opening = (!trimmed_line.has_prefix ("{")  && next_line != null && !next_line.has_prefix ("{")) && trimmed_line.has_suffix (")");
                 warning ("`%s\', %s", trimmed_line, no_opening.to_string ());
                 if (no_opening) {
-                    if (trimmed_line.has_prefix ("for")  || trimmed_line.has_prefix ("foreach")  || trimmed_line.has_prefix ("for")  || trimmed_line.has_prefix ("do")  || trimmed_line.has_prefix ("if") || trimmed_line.has_prefix ("else")) {
+                    if (trimmed_line.has_prefix ("for") || trimmed_line.has_prefix ("foreach")  || trimmed_line.has_prefix ("for")  || trimmed_line.has_prefix ("do")  || trimmed_line.has_prefix ("if") || trimmed_line.has_prefix ("else")) {
                         to_add = 1;
                     } else if (trimmed_line.has_prefix ("while")  && no_opening  && !trimmed_line.contains (");")) {
                         to_add = 1;
@@ -292,7 +298,7 @@ class Vls.Formatter : Object{
                 continue;
             }
             if ((current_char  == ':'  && !sb.str.contains ("case ")) || current_char  == '?') {
-                if (!last_char.isspace () && sb.str.contains ("?"))
+                if (!last_char.isspace () && (sb.str.contains ("?") && sb.str.contains (";")))
                     sb.append_c (' ');
                 sb.append_c (current_char);
                 if (!next_char.isspace ())

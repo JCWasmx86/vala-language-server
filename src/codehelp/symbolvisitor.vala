@@ -160,7 +160,7 @@ class Vls.SymbolVisitor<G> : CodeVisitor {
         clause.accept_children (this);
     }
 
-    public override void visit_character_literal (CharacterLiteral lit) {
+    public override void visit_character_literal (Vala.CharacterLiteral lit) {
         if (seen.contains (lit))
             return;
         seen.add (lit);
@@ -572,7 +572,7 @@ class Vls.SymbolVisitor<G> : CodeVisitor {
         expr.accept_children (this);
     }
 
-    public override void visit_regex_literal (RegexLiteral lit) {
+    public override void visit_regex_literal (Vala.RegexLiteral lit) {
         if (seen.contains (lit))
             return;
         seen.add (lit);
@@ -617,7 +617,7 @@ class Vls.SymbolVisitor<G> : CodeVisitor {
         expr.accept_children (this);
     }
 
-    public override void visit_string_literal (StringLiteral lit) {
+    public override void visit_string_literal (Vala.StringLiteral lit) {
         if (seen.contains (lit))
             return;
         seen.add (lit);
