@@ -3,7 +3,7 @@ using Vala;
 
 class Vls.TokenFormatter : Object{
     SourceFile _file;
-
+    Vls.Token? last_token = null;
     internal TokenFormatter(SourceFile file) {
         _file = file;
     }
@@ -17,22 +17,39 @@ class Vls.TokenFormatter : Object{
         for(var i = 0; i < length; i++) {
             var following = length - i;
             var current_char = source.get_char(i);
-            var next_chars = source.slice(i + 1, (following > 3 ? 3 : following) + 1);
             switch(current_char) {
                 case '"':
-                    ret.add(parse_string_literal(ref i, source));
+                    last_token = parse_string_literal(ref i, source);
                     break;
                 case '\'':
-                    ret.add(parse_character_literal(ref i, source));
+                    last_token = parse_character_literal(ref i, source);
                     break;
                 default:
-                    var t = default_handling(ref i, source);
-                    if(t != null)
-                        ret.add(t);
+                    last_token = default_handling(ref i, source);
                     break;
+            }
+            if(last_token != null) {
+                ret.add(last_token);
             }
         }
         return ret;
+    }
+    bool start_regex() {
+        if(last_token == null)
+            return false;
+        if(last_token is Operator) {
+            // See https://github.com/GNOME/vala/blob/0afdde060b0cc3d4c575f6686730a38441e92966/vala/valascanner.vala#L1092
+            var txt = last_token.content;
+            return txt == "=" || txt == "," ||
+                    txt == "-" || txt == "??" ||
+                    txt == "==" || txt == ">=" ||
+                    txt == ">" || txt == "<=" ||
+                    txt == "<" || txt == "!=" ||
+                    txt == "~" || txt == "|" ||
+                    txt == "[" || txt == "(" || txt == "+";
+        } else if(last_token is Identifier) {
+            return last_token.content == "return";
+        }
     }
     Vls.Token? default_handling(ref int i, string source) {
         var current_char = source.get_char(i);
@@ -40,10 +57,13 @@ class Vls.TokenFormatter : Object{
         if(current_char.isspace())
             return null;
         if(current_char == '/') {
-            if(next_char == '/') {
-                return handle_slash_slash(ref i, string source);
+            if(start_regex()) {
+                // TODO
+                return handle_regex_literal(ref i, source);
+            } else if(next_char == '/') {
+                return handle_slash_slash(ref i, source);
             } else if(next_char == '*') {
-                return handle_multiline_comment(ref i, string source);
+                return handle_multiline_comment(ref i, source);
             } else if(next_char == '=') {
                 i++;
                 return new Operator("/=");
@@ -51,12 +71,14 @@ class Vls.TokenFormatter : Object{
             // TODO: Regex literal + plus modifiers (/.../ismx)
             return new Operator("/");
         }
-        // TODO: {[()]}
-        // TODO: Deduplicate
-        if (current_char == ',') {
-            return new Operator(",");
-        } else if(current_char == '@') {
-            return new Operator("@");
+        if(is_single_char_op(current_char)) {
+            return new Operator(current_char.to_string());
+        } else if(can_be_assigned(current_char)) {
+            if(next_char == '=') {
+                i++;
+                return new Operator(current_char.to_string() + "=");
+            }
+            return new Operator(current_char.to_string());
         } else if(current_char == '.') {
             if(next_char == '.' && source.get_char(i + 2) == '.') {
                 i += 2;
@@ -69,30 +91,18 @@ class Vls.TokenFormatter : Object{
                 return new Operator("::");
             }
             return new Operator(":");
-        } else if(current_char == ';') {
-            return new Operator(";");
-        } else if(current_char == '#') {
-            return new Operator("#");
         } else if(current_char == '?') {
             if(next_char == '?') {
                 i++;
                 return new Operator("??");
             }
             return new Operator("?");
-        } else if(current_char == '|' || current_char == '&' || current_char == '=') {
+        } else if(current_char == '|' || current_char == '&') {
             if(next_char == current_char || next_char == '=') {
                 i++;
                 return new Operator(current_char.to_string() + next_char.to_string());
             }
             return new Operator(current_char.to_string());
-        } else if(current_char == '^') {
-            if(next_char == '=') {
-                i++;
-                return new Operator("^=");
-            }
-            return new Operator("^");
-        } else if(current_char == '~') {
-            return new Operator("~");
         } else if(current_char == '<') {
             if(next_char == '=') {
                 i++;
@@ -106,18 +116,6 @@ class Vls.TokenFormatter : Object{
                 return new Operator("<<");
             }
             return new Operator("<");
-        } else if(current_char == '>') {
-            if(next_char == '=') {
-                i++;
-                return new Operator(">=");
-            }
-            return new Operator(">");
-        } else if(current_char == '!') {
-            if(next_char == '=') {
-                i++;
-                return new Operator("!=");
-            }
-            return new Operator("!");
         } else if (current_char == '+') {
             if(next_char == '=') {
                 i++;
@@ -139,18 +137,6 @@ class Vls.TokenFormatter : Object{
                 return new Operator("->");
             }
             return new Operator("-");
-        } else if(current_char == '*') {
-            if(next_char == '=') {
-                i++;
-                return new Operator("*=");
-            }
-            return new Operator("*");
-        } else if(current_char == '%') {
-            if(next_char == '=') {
-                i++;
-                return new Operator("%=");
-            }
-            return new Operator("%");
         } else {
             var sb = new StringBuilder();
             var j = i;
@@ -161,8 +147,142 @@ class Vls.TokenFormatter : Object{
                 else
                     break;
             }
+            // Otherwise the next char is skipped.
+            j--;
             j = i;
             return new Identifier(sb.str);
+        }
+    }
+    Vls.Token handle_regex_literal(ref int i, string source) {
+        var sb = new StringBuilder();
+        i++; // Skip /
+        var j = i;
+        for(;; j++) {
+            var c = source.get_char(j);
+            if(c == '/')
+                break;
+            if(c == '\\') {
+                // See https://github.com/GNOME/vala/blob/0afdde060b0cc3d4c575f6686730a38441e92966/vala/valascanner.vala#L162
+                switch(source.get_char(j + 1)) {
+                    case '\'':
+                    case '"':
+                    case '\\':
+                    case '/':
+                    case '^':
+                    case '$':
+                    case '.':
+                    case '[':
+                    case ']':
+                    case '{':
+                    case '}':
+                    case '(':
+                    case ')':
+                    case '?':
+                    case '*':
+                    case '+':
+                    case '-':
+                    case '#':
+                    case '&':
+                    case '~':
+                    case ':':
+                    case ';':
+                    case '<':
+                    case '>':
+                    case '|':
+                    case '%':
+                    case '=':
+                    case '@':
+                    case '0':
+                    case 'b':
+                    case 'B':
+                    case 'f':
+                    case 'n':
+                    case 'N':
+                    case 'r':
+                    case 'R':
+                    case 't':
+                    case 'v':
+                    case 'a':
+                    case 'A':
+                    case 'p':
+                    case 'P':
+                    case 'e':
+                    case 'd':
+                    case 'D':
+                    case 's':
+                    case 'S':
+                    case 'w':
+                    case 'W':
+                    case 'G':
+                    case 'z':
+                    case 'Z':
+                        sb.append("\\").append_unichar(source.get_char(j + 1));
+                        j++;
+                        break;
+                    case 'u':
+                        sb.append("\\u");
+                        j++;
+                        for(var k = 0; k < 4; k++) {
+                            sb.append_unichar(source.get_char(j + 1 + k));
+                            j++;
+                        }
+                        break;
+                    case 'x':
+                        j++;
+                        sb.append("\\x").append_unichar(source.get_char(j + 1)).append_unichar(source.get_char(j + 2));
+                        j += 2;
+                        break;
+                }
+            } else {
+                sb.append_unichar(c);
+            }
+        }
+        j++; // Skip trailing /
+        var string2 = new StringBuilder();
+        // See https://github.com/GNOME/vala/blob/0afdde060b0cc3d4c575f6686730a38441e92966/vala/valascanner.vala#L120
+        for(;; j++) {
+            var c = source.get_char(j);
+            switch(c) {
+                case 'i':
+                case 's':
+                case 'm':
+                case 'x':
+                    string2.append_unichar(c);
+                    continue;
+            }
+            break;
+        }
+        return new RegexLiteral(sb.str, string2.str);
+    }
+    bool is_single_char_op(unichar c) {
+        switch(c) {
+            case ',':
+            case '@':
+            case ';':
+            case '#':
+            case '~':
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+                return true;
+            default:
+                return false;
+        }
+    }
+    bool can_be_assigned(unichar c) {
+        switch(c) {
+            case '=':
+            case '^':
+            case '>':
+            case '!':
+            case '*':
+            case '%':
+                return true;
+            default:
+                return false;
         }
     }
     Vls.Token handle_multiline_comment(ref int i, string source) {
@@ -199,7 +319,7 @@ class Vls.TokenFormatter : Object{
             content.append_unichar(source.get_char(j));
         }
         i = j;
-        if(is_inline)
+        if(!multiline)
             return new InlineComment.multiline(content.str.strip(), is_doc);
         return new Comment.multiline(content.str.strip(), is_doc);
     }
@@ -287,7 +407,10 @@ class Vls.TokenFormatter : Object{
     }
 }
 class Vls.Token {
-    protected string content;
+    internal string content{protected set;};
+    string to_string(ref uint indentation) {
+        return this.content;
+    }
 }
 
 // Either a // comment or /* */
@@ -300,23 +423,49 @@ class Vls.InlineComment : Vls.Token{
     }
     internal InlineComment.multiline(string s, bool is_doc) {
         this.content = s;
+        this.is_multiline = true;
         this.is_doc = is_doc;
+    }
+    string to_string(ref uint indentation) {
+        var c = this.content.strip();
+        if(is_multiline) {
+            return (is_doc ? "/** " : "/* ") + c + " */";
+        }
+        return "<indent>// " + c;
     }
 }
 // Comment on its own line or /* */ comments on their own lines
 class Vls.Comment : Vls.Token {
     bool is_doc;
+    bool is_multiline;
     internal Comment(string s) {
         this.content = s;
     }
-    internal InlineComment.multiline(string s, bool is_doc) {
+    internal Comment.multiline(string s, bool is_doc) {
         this.content = s;
+        this.is_multiline = true;
         this.is_doc = is_doc;
+    }
+    string to_string(ref uint indentation) {
+        var c = this.content.strip();
+        if(is_multiline) {
+            var parts = this.content.split("\n");
+            var sb = new StringBuilder();
+            sb.append(is_doc ? "/**" : "/*\n");
+            foreach(var part in parts) {
+                sb.append("<indent> * ").append(part).append("\n");
+            }
+            sb.append("<indent> */\n");
+            return sb.str;
+        }
+        return "<indent>// " + c;
     }
 }
 
 class Vls.Identifier : Vls.Token {
-
+    internal Identifier(string s) {
+        this.content = s;
+    }
 }
 class Vls.Operator : Vls.Token {
     internal Operator(string s) {
@@ -327,17 +476,34 @@ class Vls.MultilineString : Vls.Token {
     internal MultilineString(string s) {
         this.content = s;
     }
+    string to_string(ref uint indentation) {
+        return "\"\"\"" + this.content "\"\"\"";
+    }
 }
 class Vls.RegexLiteral : Vls.Token {
-
+    // E.g. i,m,s,x
+    string modifiers;
+    internal RegexLiteral(string regex, string modifiers) {
+        this.content = regex;
+        this.modifiers = modifiers;
+    }
+    string to_string(ref uint indentation) {
+        return "/" + this.content + "/" + modifiers;
+    }
 }
 class Vls.StringLiteral : Vls.Token {
     internal StringLiteral(string s) {
         this.content = s;
     }
+    string to_string(ref uint indentation) {
+        return "\"" + this.content "\"";
+    }
 }
 class Vls.CharacterLiteral : Vls.Token {
     internal CharacterLiteral(string s) {
         this.content = s;
+    }
+    string to_string(ref uint indentation) {
+        return "\'" + this.content "\'";
     }
 }
