@@ -16,6 +16,8 @@ vls_src = files([
   'documentation/girdocumentation.vala',
   'formatter/formatter.vala',
   'formatter/tokenformatter.vala',
+  'formatter/mergedtokens.vala',
+  'formatter/tokenmerger.vala',
   'projects/buildtarget.vala',
   'projects/buildtask.vala',
   'projects/ccproject.vala',

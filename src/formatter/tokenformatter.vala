@@ -10,12 +10,13 @@ class Vls.TokenFormatter : Object{
     internal void format() {
         var source_file = this.load_string();
         var tokens = this.tokenize(source_file);
+        var merger = new TokenMerger(merger);
+        merger.merge();
     }
     Gee.List<Token> tokenize(string source) {
         var ret = new Gee.ArrayList<Token>();
         var length = source.length;
         for(var i = 0; i < length; i++) {
-            var following = length - i;
             var current_char = source.get_char(i);
             switch(current_char) {
                 case '"':
@@ -25,7 +26,9 @@ class Vls.TokenFormatter : Object{
                     last_token = parse_character_literal(ref i, source);
                     break;
                 default:
-                    last_token = default_handling(ref i, source);
+                    var t = default_handling(ref i, source);
+                    if(t != null)
+                        last_token = t;
                     break;
             }
             if(last_token != null) {
@@ -50,6 +53,7 @@ class Vls.TokenFormatter : Object{
         } else if(last_token is Identifier) {
             return last_token.content == "return";
         }
+        return false;
     }
     Vls.Token? default_handling(ref int i, string source) {
         var current_char = source.get_char(i);
@@ -406,9 +410,9 @@ class Vls.TokenFormatter : Object{
         return sb.str;
     }
 }
-class Vls.Token {
-    internal string content{protected set;};
-    string to_string(ref uint indentation) {
+abstract class Vls.Token {
+    internal string content{protected set; internal get;}
+    internal virtual string to_string(ref uint indentation) {
         return this.content;
     }
 }
@@ -426,7 +430,7 @@ class Vls.InlineComment : Vls.Token{
         this.is_multiline = true;
         this.is_doc = is_doc;
     }
-    string to_string(ref uint indentation) {
+    internal override string to_string(ref uint indentation) {
         var c = this.content.strip();
         if(is_multiline) {
             return (is_doc ? "/** " : "/* ") + c + " */";
@@ -446,7 +450,7 @@ class Vls.Comment : Vls.Token {
         this.is_multiline = true;
         this.is_doc = is_doc;
     }
-    string to_string(ref uint indentation) {
+    internal override string to_string(ref uint indentation) {
         var c = this.content.strip();
         if(is_multiline) {
             var parts = this.content.split("\n");
@@ -476,8 +480,8 @@ class Vls.MultilineString : Vls.Token {
     internal MultilineString(string s) {
         this.content = s;
     }
-    string to_string(ref uint indentation) {
-        return "\"\"\"" + this.content "\"\"\"";
+    internal override string to_string(ref uint indentation) {
+        return "\"\"\"" + this.content + "\"\"\"";
     }
 }
 class Vls.RegexLiteral : Vls.Token {
@@ -487,7 +491,7 @@ class Vls.RegexLiteral : Vls.Token {
         this.content = regex;
         this.modifiers = modifiers;
     }
-    string to_string(ref uint indentation) {
+    internal override string to_string(ref uint indentation) {
         return "/" + this.content + "/" + modifiers;
     }
 }
@@ -495,15 +499,15 @@ class Vls.StringLiteral : Vls.Token {
     internal StringLiteral(string s) {
         this.content = s;
     }
-    string to_string(ref uint indentation) {
-        return "\"" + this.content "\"";
+    internal override string to_string(ref uint indentation) {
+        return "\"" + this.content + "\"";
     }
 }
 class Vls.CharacterLiteral : Vls.Token {
     internal CharacterLiteral(string s) {
         this.content = s;
     }
-    string to_string(ref uint indentation) {
-        return "\'" + this.content "\'";
+    internal override string to_string(ref uint indentation) {
+        return "\'" + this.content + "\'";
     }
 }
