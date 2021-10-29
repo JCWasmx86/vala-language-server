@@ -39,9 +39,8 @@ class Vls.Formatter : Object{
             // while LSP provides it as 0-based.
             var line_to_format = source_file.get_source_line (i + 1);
             // EOF reached
-            if (line_to_format == null) {
+            if (line_to_format == null)
                 break;
-            }
             // Remove trailing/leading spaces, to restore indents later
             var trimmed_line = line_to_format.strip ();
             // Indented lines with no other content are replaced by really empty lines or one with a star
