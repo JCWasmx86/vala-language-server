@@ -229,7 +229,7 @@ class Vls.Formatter : Object{
                 sb.append_c ('\'');
                 continue;
             }
-            if (current_char  == '/'  && next_char  == '/') {
+            if (current_char == '/'  && next_char  == '/') {
                 if (!last_char.isspace ())
                     sb.append_c (' ');
                 sb.append ("//");
@@ -238,6 +238,14 @@ class Vls.Formatter : Object{
                     sb.append_c (' ');
                 sb.append (l_new.slice (i, l_new.length));
                 break;
+            }
+            if(current_char == '/' && next_char == '*') {
+                // Inline comments like int abc = /*foo */ 5;
+                while(l_new.data[i] != '*' && l_new.data[i + 1] == '/') {
+                    sb.append_c ((char)l_new.data[i]);
+                    i++;
+                }
+                continue;
             }
             if (current_char  == '\"') {
                 uint count_to_find = 0;
