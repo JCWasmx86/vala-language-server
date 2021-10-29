@@ -28,12 +28,6 @@ class Vls.Formatter : Object{
      */
     public string ? format (out Lsp.TextEdit edit, out Jsonrpc.ClientError error) {
         error = 0;
-        if(1 == 1) {
-            edit = null;
-            TokenFormatter formatter = new TokenFormatter(this._input.first);
-            formatter.format();
-            return null;
-        }
         var new_lines = new ArrayList<string> ();
         expected_indentation_depth = 0;
         var source_file = _input.first;
@@ -48,7 +42,7 @@ class Vls.Formatter : Object{
             if (line_to_format == null) {
                 break;
             }
-            // Remove trailing/leading spaces, to restore indents
+            // Remove trailing/leading spaces, to restore indents later
             var trimmed_line = line_to_format.strip ();
             // Indented lines with no other content are replaced by really empty lines or one with a star
             // for multiline comments
@@ -145,7 +139,7 @@ class Vls.Formatter : Object{
         sb.append (directive).append_c (' ');
         for (var i = 1 + directive.length; i < initial.length; i++) {
             var current_char = (char) initial.data[i];
-            var next_char = (char)(i + 1  < initial.length ? initial.data[i  + 1]  : '\0');
+            var next_char = (char)(i + 1  < initial.length ? initial.data[i  + 1] : '\0');
             var overnext_char = (char)(i + 1 < initial.length ? initial.data[i + 2] : '\0');
             var last_char = (char)(sb.len == 0 ? '\0' : sb.str.data[i  - 1]);
             var is_binary_op = current_char == '|' || current_char == '&' || current_char == '=';
@@ -193,7 +187,7 @@ class Vls.Formatter : Object{
         var is_doc = trimmed_line.has_prefix ("/**");
         var maybe_string = trimmed_line.slice (is_doc ? 3 : 2, trimmed_line.length).strip ();
         var indent = generate_indentation (expected_indentation_depth);
-        new_lines.add (indent + (is_doc ? "/**"   : "/*"));
+        new_lines.add (indent + (is_doc ? "/**"  : "/*"));
         if (maybe_string.length > 0) {
             new_lines.add (indent + " * " + maybe_string);
         }
@@ -220,8 +214,8 @@ class Vls.Formatter : Object{
         var sb = new StringBuilder ();
         for (var i = 0; i < l_new.length; i++) {
             var current_char = (char) l_new.data[i];
-            var next_char = (char)(i + 1  < l_new.length ? l_new.data[i  + 1]  : '\0');
-            var overnext_char = (char)(i + 2  < l_new.length ? l_new.data[i  + 2]  : '\0');
+            var next_char = (char)(i + 1  < l_new.length ? l_new.data[i  + 1] : '\0');
+            var overnext_char = (char)(i + 2  < l_new.length ? l_new.data[i  + 2] : '\0');
             var last_char = (char)(sb.len == 0 ? '\0' : sb.str.data[i  - 1]);
             if (current_char  == '\'') {
                 sb.append_c ('\'');
@@ -357,8 +351,8 @@ class Vls.Formatter : Object{
                     sb.append (string_to_add);
                     // To fix some issues
                     i--;
-                    next_char = (char)(i + 1  < l_new.length ? l_new.data[i  + 1]  : '\0');
-                    overnext_char = (char)(i + 2  < l_new.length ? l_new.data[i  + 2]  : '\0');
+                    next_char = (char)(i + 1  < l_new.length ? l_new.data[i  + 1] : '\0');
+                    overnext_char = (char)(i + 2  < l_new.length ? l_new.data[i  + 2] : '\0');
                     warning ("%c %c", next_char, overnext_char);
                     if (!next_char.isspace ())
                         sb.append_c (' ');
@@ -421,7 +415,7 @@ class Vls.Formatter : Object{
     bool is_op (string l, uint current_index, out int length) {
         length = 0;
         var current_char = l.data[current_index];
-        var next_char = current_index + 1  < l.length ? l.data[current_index  + 1]  : '\0';
+        var next_char = current_index + 1  < l.length ? l.data[current_index  + 1] : '\0';
         switch (current_char) {
             case '&':
             if (next_char == '&' || next_char == '=')
