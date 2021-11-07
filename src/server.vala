@@ -176,6 +176,7 @@ class Vls.Server : Object {
         call_handlers["textDocument/references"] = this.textDocumentReferences;
         call_handlers["textDocument/documentHighlight"] = this.textDocumentReferences;
         call_handlers["textDocument/implementation"] = this.textDocumentImplementation;
+        call_handlers["textDocument/formatting"] = this.textDocumentFormatting;
         call_handlers["workspace/symbol"] = this.workspaceSymbol;
         call_handlers["textDocument/rename"] = this.textDocumentRename;
         call_handlers["textDocument/prepareRename"] = this.textDocumentPrepareRename;
@@ -246,6 +247,7 @@ class Vls.Server : Object {
                     hoverProvider: new Variant.boolean (true),
                     referencesProvider: new Variant.boolean (true),
                     documentHighlightProvider: new Variant.boolean (true),
+                    documentFormattingProvider: new Variant.boolean (true),
                     implementationProvider: new Variant.boolean (true),
                     workspaceSymbolProvider: new Variant.boolean (true),
                     renameProvider: buildDict (prepareProvider: new Variant.boolean (true)),
@@ -1625,6 +1627,55 @@ class Vls.Server : Object {
                 debug (@"[$method] failed to reply to client: $(e.message)");
             }
         });
+    }
+
+    void textDocumentFormatting (Jsonrpc.Server self, Jsonrpc.Client client, string method, Variant id, Variant @params) {
+        debug ("[textDocument/formatting] called!");
+        var p = Util.parse_variant<Lsp.DocumentFormattingParams>(@params);
+        var results = new ArrayList<Pair<Vala.SourceFile, Compilation>> ();
+        Project selected_project = null;
+        foreach (var project in projects.get_keys_as_array ()) {
+            results = project.lookup_compile_input_source_file (p.textDocument.uri);
+            if (!results.is_empty) {
+                debug ("[textDocument/formatting] found good URI ... %s", p.textDocument.uri);
+                selected_project = project;
+                break;
+            }
+        }
+        // fallback to default project
+        if (selected_project == null) {
+            results = default_project.lookup_compile_input_source_file (p.textDocument.uri);
+            selected_project = default_project;
+        }
+        if (results.is_empty) {
+            debug (@"file `$(Uri.unescape_string (p.textDocument.uri))' not found");
+            reply_null (id, client, method);
+            return;
+        }
+        var json_array = new Json.Array ();
+        foreach (var file in results) {
+            var formatter = new Vls.Formatter (p.options, file, null);
+            TextEdit edited;
+            Jsonrpc.ClientError error_code = 0;
+            var error_string = formatter.format (out edited, out error_code);
+            if(error_string != null) {
+                client.reply_error_async.begin (
+                    id,
+                    error_code,
+                    error_string,
+                cancellable);
+                return;
+            }
+            debug ("File:\n%s", Json.to_string (Json.gobject_serialize (edited), true));
+            json_array.add_element (Json.gobject_serialize (edited));
+        }
+        try {
+            Variant variant_array = Json.gvariant_deserialize (new Json.Node.alloc ().init_array (json_array), null);
+            debug("Sending text:\n%s", Json.to_string (new Json.Node.alloc ().init_array (json_array), true));
+            client.reply (id, variant_array, cancellable);
+        } catch (Error e) {
+            debug (@"[$method] failed to reply to client: $(e.message)");
+        }
     }
 
     void textDocumentRename (Jsonrpc.Server self, Jsonrpc.Client client, string method, Variant id, Variant @params) {
