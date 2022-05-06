@@ -23,13 +23,13 @@ using Vala;
 
 namespace Vls.CodeActions {
     /**
-     * Extracts a list of code actions for the given document and range.
+     * Extracts a list of code actions for the given document and range using the AST and the diagnostics.
      *
      * @param file      the current document
      * @param range     the range to show code actions for
      * @param uri       the document URI
      */
-    Collection<CodeAction> extract (Compilation compilation, TextDocument file, Range range, string uri) {
+    Collection<CodeAction> generate_codeactions (Compilation compilation, TextDocument file, Range range, string uri, Reporter reporter) {
         // search for nodes containing the query range
         var finder = new NodeSearch (file, range.start, true, range.end);
         var code_actions = new ArrayList<CodeAction> ();
@@ -57,8 +57,46 @@ namespace Vls.CodeActions {
                         code_actions.add (new ImplementMissingPrereqsAction (csym, missing.first, missing.second, clsdef_range.end, code_style, document));
                     }
                 }
+            } else if (code_node is ObjectCreationExpression) {
+                var oce = (ObjectCreationExpression) code_node;
+                foreach (var diag in reporter.messages) {
+                    if (file.filename != diag.loc.file.filename)
+                        continue;
+                    if (!(oce.source_reference.contains (diag.loc.begin) || oce.source_reference.contains (diag.loc.end)))
+                        continue;
+                    if (diag.message.contains (" extra arguments for ")) {
+                        var to_be_created = oce.type_reference.symbol;
+                        if (!(to_be_created is Vala.Class)) {
+                            continue;
+                        }
+                        var constr = ((Vala.Class) to_be_created).constructor;
+                        if (constr != null) {
+                            continue;
+                        }
+                        var target_file = to_be_created.source_reference.file;
+                        // We can't just edit, e.g. some external vapi
+                        if (!compilation.get_project_files ().contains (target_file))
+                            continue;
+                        code_actions.add (new ImplementConstructorAction (oce, to_be_created));
+                    } else if (diag.message.contains ("The name ") && diag.message.contains ("does not exist in the context of")) {
+                        var to_be_created = oce.member_name.inner.symbol_reference;
+                        if (!(to_be_created is Vala.Class)) {
+                            continue;
+                        }
+                        var constr = ((Vala.Class) to_be_created).constructor;
+                        if (constr != null) {
+                            continue;
+                        }
+                        var target_file = to_be_created.source_reference.file;
+                        // We can't just edit, e.g. some external vapi
+                        if (!compilation.get_project_files ().contains (target_file))
+                            continue;
+                    }
+                }
             }
         }
+
+        new A (5);
 
         return code_actions;
     }
