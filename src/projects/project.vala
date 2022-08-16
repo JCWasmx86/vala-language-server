@@ -44,6 +44,8 @@ abstract class Vls.Project : Object {
      */
     protected FileCache file_cache;
 
+    protected Lsp.Config? config;
+
     protected Project (string root_path, FileCache file_cache) {
         this.root_path = root_path;
         this.file_cache = file_cache;

@@ -400,7 +400,7 @@ class Vls.Server : Jsonrpc.Server {
         // TODO: autotools, make(?), cmake(?)
         if (meson_file.query_exists (cancellable)) {
             try {
-                backend_project = new MesonProject (root_path, file_cache, cancellable);
+                backend_project = new MesonProject (root_path, file_cache, cancellable, init_params.initializationOptions);
             } catch (Error e) {
                 if (!(e is ProjectError.VERSION_UNSUPPORTED)) {
                     show_message (client, @"Failed to initialize Meson project - $(e.message)", MessageType.Error);
@@ -413,7 +413,7 @@ class Vls.Server : Jsonrpc.Server {
             foreach (var cc_file in cc_files) {
                 string cc_file_path = Util.realpath (cc_file.get_path ());
                 try {
-                    backend_project = new CcProject (root_path, cc_file_path, file_cache, cancellable);
+                    backend_project = new CcProject (root_path, cc_file_path, file_cache, cancellable, init_params.initializationOptions);
                     debug ("[initialize] initialized CcProject with %s", cc_file_path);
                     break;
                 } catch (Error e) {
@@ -437,7 +437,7 @@ class Vls.Server : Jsonrpc.Server {
         }
 
         // always have default project
-        default_project = new DefaultProject (root_path, file_cache);
+        default_project = new DefaultProject (root_path, file_cache, init_params.initializationOptions);
 
         // build and publish diagnostics
         foreach (var project in new_projects) {

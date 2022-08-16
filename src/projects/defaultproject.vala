@@ -22,8 +22,9 @@ using Gee;
  * A project without any backend. Mainly useful for editing one file.
  */
 class Vls.DefaultProject : Project {
-    public DefaultProject (string root_path, FileCache file_cache) {
+    public DefaultProject (string root_path, FileCache file_cache, Lsp.Config? config) {
         base (root_path, file_cache);
+        this.config = config;
     }
 
     public override bool reconfigure_if_stale (Cancellable? cancellable = null) throws Error {
@@ -54,7 +55,7 @@ class Vls.DefaultProject : Project {
             }
         }
         btarget = new Compilation (file_cache, root_path, uri, uri, build_targets.size,
-                                   {"valac"}, args, sources, {}, {}, content != null ? new string[]{content} : null);
+                                   {"valac"}, args, sources, {}, {}, content != null ? new string[]{content} : null, this.config);
         // build it now so that information is available immediately on
         // file open (other projects compile on LSP initialize(), so they don't
         // need to do this)

@@ -530,7 +530,9 @@ class Vls.MesonProject : Project {
                                                     first_source.parameters, 
                                                     first_source.sources,
                                                     first_source.generated_sources,
-                                                    meson_target_info.filename));
+                                                    meson_target_info.filename,
+                                                    null,
+                                                    this.config));
             else {
                 BuildTarget? previous_target = null;
                 if (swap_with_previous_target)
@@ -781,9 +783,10 @@ class Vls.MesonProject : Project {
         base.build_if_stale (cancellable);
     }
 
-    public MesonProject (string root_path, FileCache file_cache, Cancellable? cancellable = null) throws Error {
+    public MesonProject (string root_path, FileCache file_cache, Cancellable? cancellable, Lsp.Config? config) throws Error {
         base (root_path, file_cache);
         this.build_dir = DirUtils.make_tmp (@"vls-meson-$(str_hash (root_path))-XXXXXX");
+        this.config = config;
         reconfigure_if_stale (cancellable);
     }
 

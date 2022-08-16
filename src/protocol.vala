@@ -690,6 +690,27 @@ namespace Lsp {
         public string? rootPath { get; set; }
         public string? rootUri { get; set; }
         public ClientCapabilities capabilities { get; set; default = new ClientCapabilities (); }
+        public Config? initializationOptions { get; set; default = null; }
+    }
+
+    public class Config : Object {
+        public uint32 version { get; set; default = 1000000; }
+        public string sdk_path { get; set; }
+        public string manifest_path { get; set; }
+
+        public string[] vapi_dirs () {
+            // TODO: Add paths from the SDKs
+            var ret = new string[0];
+            ret += this.sdk_path + "/files/share/vala/vapi/";
+            for (var i = 40; i < 120; i += 2) {
+                var p = this.sdk_path + "/files/share/vala-0.%u/vapi/".printf (i);
+                if (FileUtils.test (p, FileTest.EXISTS)) {
+                    ret += p;
+                    break;
+                }
+            }
+            return ret;
+        }
     }
 
     class SignatureInformation : Object, Json.Serializable {

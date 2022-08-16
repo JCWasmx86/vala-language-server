@@ -118,7 +118,7 @@ class Vls.Compilation : BuildTarget {
     public Compilation (FileCache file_cache, string output_dir, string name, string id, int no,
                         string[] compiler, string[] args, string[] sources, string[] generated_sources,
                         string?[] target_output_files,
-                        string[]? sources_content = null) throws Error {
+                        string[]? sources_content = null, Lsp.Config? config) throws Error {
         base (output_dir, name, id, no);
         _file_cache = file_cache;
         directory = output_dir;
@@ -140,6 +140,8 @@ class Vls.Compilation : BuildTarget {
                 set_directory = true;
             }
         }
+        if (config != null)
+            this._vapi_dirs.add_all_array (config.vapi_dirs ());
 
         for (int arg_i = -1; (arg_i = Util.iterate_valac_args (args, out flag_name, out arg_value, arg_i)) < args.length;) {
             if (flag_name == "pkg") {

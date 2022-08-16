@@ -70,7 +70,7 @@ class Vls.CcProject : Project {
             if (cc.command[0].contains ("valac"))
                 build_targets.add (new Compilation (file_cache, cc.directory, cc.file ?? @"CC#$i", @"CC#$i", i,
                                                     cc.command[0:1], cc.command[1:cc.command.length],
-                                                    new string[]{}, new string[]{}, new string[]{}));
+                                                    new string[]{}, new string[]{}, new string[]{}, null, this.config));
             else
                 build_targets.add (new BuildTask (file_cache, cc.directory, cc.directory, cc.file ?? @"CC#$i", @"CC#$i", i,
                                                   cc.command[0:1], cc.command[1:cc.command.length], 
@@ -83,7 +83,7 @@ class Vls.CcProject : Project {
         return true;
     }
 
-    public CcProject (string root_path, string cc_location, FileCache file_cache, Cancellable? cancellable = null) throws Error {
+    public CcProject (string root_path, string cc_location, FileCache file_cache, Cancellable? cancellable = null, Lsp.Config? config) throws Error {
         base (root_path, file_cache);
 
         var root_dir = File.new_for_path (root_path);
@@ -96,6 +96,7 @@ class Vls.CcProject : Project {
 
         this.build_dir = cc_json_file.get_parent ().get_path ();
         this.cc_json_file = cc_json_file;
+        this.config = config;
 
         reconfigure_if_stale (cancellable);
     }
