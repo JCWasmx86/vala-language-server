@@ -48,6 +48,7 @@ class Vls.Server : Jsonrpc.Server {
     uint[] g_sources = {};
     ulong client_closed_event_id;
     HashTable<Project, ulong> projects;
+    HashTable<string, Analytics> timings;
     DefaultProject default_project;
 
     /**
@@ -67,6 +68,8 @@ class Vls.Server : Jsonrpc.Server {
      * rebuilding dependent targets.
      */
     FileCache file_cache = new FileCache ();
+
+    Socket? server_socket = null;
 
     static construct {
         Process.@signal (ProcessSignal.INT, () => {
@@ -122,10 +125,13 @@ class Vls.Server : Jsonrpc.Server {
 
         this.projects = new HashTable<Project, ulong> (GLib.direct_hash, GLib.direct_equal);
 
+        this.timings = new HashTable<string, Analytics> (GLib.str_hash, GLib.str_equal);
+
         debug ("Finished constructing");
     }
 
     protected override void notification (Jsonrpc.Client client, string method, Variant parameters) {
+        var timer = new Timer ();
         switch (method) {
             case "exit":
                 exit ();
@@ -155,9 +161,14 @@ class Vls.Server : Jsonrpc.Server {
                 warning ("unhandled notification `%s'", method);
                 break;
         }
+        timer.stop ();
+        ulong microseconds;
+        var seconds = timer.elapsed (out microseconds);
+        this.update_timings (method, seconds * 1000000);
     }
 
     protected override bool handle_call (Jsonrpc.Client client, string method, Variant id, Variant parameters) {
+        var timer = new Timer ();
         switch (method) {
             case "initialize":
                 initialize (client, method, id, parameters);
@@ -254,6 +265,10 @@ class Vls.Server : Jsonrpc.Server {
                 warning ("unhandled call `%s'", method);
                 return false;
         }
+        timer.stop ();
+        ulong microseconds;
+        var seconds = timer.elapsed (out microseconds);
+        this.update_timings (method, seconds * 1000000);
         return true;
     }
 
@@ -264,13 +279,65 @@ class Vls.Server : Jsonrpc.Server {
     }
 #endif
 
+    void update_timings (string method, double microseconds) {
+        if (!(method in this.timings)) {
+            this.timings[method] = new Analytics (method);
+        }
+        this.timings[method].add_measurement (microseconds);
+    }
+
     bool check_signal () {
         if (Server.received_signal) {
             shutdown ();
             exit ();
             return Source.REMOVE;
         }
+        this.start_socket ();
         return !this.shutting_down;
+    }
+
+    void start_socket () {
+        if (this.server_socket != null) {
+            return;
+        }
+        try {
+            this.server_socket = new Socket(SocketFamily.IPV4, SocketType.STREAM, SocketProtocol.TCP);
+            var address = new InetAddress.loopback (SocketFamily.IPV4);
+            var inetaddress = new InetSocketAddress (address, 54321);
+            this.server_socket.bind (inetaddress, true);
+            this.server_socket.set_listen_backlog (10);
+            this.server_socket.listen ();
+            new Thread<void> ("server_thread_for_analytics", () => {
+                while (true) {
+                    try {
+                        var socket = this.server_socket.accept ();
+                        var sb = new StringBuilder ();
+                        sb.append ("HTTP/2 200 OK\r\n")
+                            .append ("Content-Type: text/html; charset=utf-8\r\n");
+                        var response = new StringBuilder ();
+                        response.append ("<!DOCTYPE html>\n")
+                            .append ("<head>\n")
+                            .append ("<title>Stats for VLS</title>\n")
+                            .append ("<meta charset=\"UTF-8\">\n")
+                            .append ("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no\" />\n")
+                            .append ("</head>\n")
+                            .append ("<body>");
+                        foreach (var s in this.timings.get_keys ()) {
+                            response.append ("%s: %.2lfμs<br>".printf (s, this.timings[s].average()));
+                        }
+                        sb.append ("Content-Length: %u\r\n\r\n".printf (response.str.length))
+                            .append (response.str);
+                        socket.send (sb.str.data);
+                    } catch (Error e) {
+                        warning ("%s", e.message);
+                    }
+                }
+            });
+        } catch (Error e) {
+            warning ("%s", e.message);
+            this.server_socket = null;
+        }
+
     }
 
     // a{sv} only
@@ -471,8 +538,13 @@ class Vls.Server : Jsonrpc.Server {
     }
 
     void project_changed_event () {
+        var timer = new Timer ();
         request_context_update (update_context_client);
         debug ("requested context update for project change event");
+        timer.stop ();
+        ulong microseconds;
+        var seconds = timer.elapsed (out microseconds);
+        this.update_timings ("project_changed_event", seconds * 1000000);
     }
 
     void cancel_request (Jsonrpc.Client client, Variant @params) {
