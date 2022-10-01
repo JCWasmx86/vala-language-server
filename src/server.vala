@@ -402,6 +402,7 @@ class Vls.Server : Jsonrpc.Server {
     }
 
     void initialize (Jsonrpc.Client client, string method, Variant id, Variant @params) {
+        var timer = new Timer ();
         init_params = Util.parse_variant<InitializeParams> (@params);
 
         File root_dir;
@@ -453,7 +454,11 @@ class Vls.Server : Jsonrpc.Server {
         } catch (Error e) {
             error (@"[initialize] failed to reply to client: $(e.message)");
         }
-
+        ulong microseconds;
+        timer.stop ();
+        var seconds = timer.elapsed (out microseconds);
+        this.update_timings ("initialize - reply", seconds * 1000000);
+        timer.start ();
         var meson_file = root_dir.get_child ("meson.build");
         ArrayList<File> cc_files = new ArrayList<File> ();
         try {
@@ -461,7 +466,10 @@ class Vls.Server : Jsonrpc.Server {
         } catch (Error e) {
             warning ("could not enumerate root dir - %s", e.message);
         }
-
+        timer.stop ();
+        seconds = timer.elapsed (out microseconds);
+        this.update_timings ("initialize - find files", seconds * 1000000);
+        timer.start ();
         var new_projects = new ArrayList<Project> ();
         Project? backend_project = null;
         // TODO: autotools, make(?), cmake(?)
@@ -506,14 +514,27 @@ class Vls.Server : Jsonrpc.Server {
         // always have default project
         default_project = new DefaultProject (root_path, file_cache);
 
+        timer.stop ();
+        seconds = timer.elapsed (out microseconds);
+        this.update_timings ("initialize - query projects", seconds * 1000000);
+        timer.start ();
+
         // build and publish diagnostics
         foreach (var project in new_projects) {
             try {
                 debug ("Building project ...");
                 project.build_if_stale ();
+                timer.stop ();
+                seconds = timer.elapsed (out microseconds);
+                this.update_timings ("initialize - rebuilding projects", seconds * 1000000);
+                timer.start ();
                 debug ("Publishing diagnostics ...");
                 foreach (var compilation in project.get_compilations ())
                     publish_diagnostics (project, compilation, client);
+                timer.stop ();
+                seconds = timer.elapsed (out microseconds);
+                this.update_timings ("initialize - publish diagnostics", seconds * 1000000);
+                timer.start ();
             } catch (Error e) {
                 show_message (client, @"Failed to build project - $(e.message)", MessageType.Error);
             }
@@ -535,6 +556,10 @@ class Vls.Server : Jsonrpc.Server {
         // listen for project changed events
         foreach (Project project in new_projects)
             projects[project] = project.changed.connect (project_changed_event);
+        timer.stop ();
+        seconds = timer.elapsed (out microseconds);
+        this.update_timings ("initialize - GIR stuff", seconds * 1000000);
+        timer.start ();
     }
 
     void project_changed_event () {
